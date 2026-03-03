@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>🔥 WoodMood</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    /* ── Base ── */
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      background:linear-gradient(135deg,#5C2E00 0%,#8B4513 50%,#D2691E 100%);
+      min-height:100vh;padding:12px;
+    }
+    .wrap{max-width:480px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+
+    /* ── Cards ── */
+    .card{background:#fff;border-radius:18px;padding:18px;box-shadow:0 4px 20px rgba(0,0,0,.35)}
+    .card-dark{background:#2b1a0e;color:#f0d9c0;border-radius:18px;padding:18px;box-shadow:0 4px 20px rgba(0,0,0,.45)}
+    .card-warm{background:#CD853F;color:#fff;border-radius:18px;padding:18px;box-shadow:0 4px 20px rgba(0,0,0,.35)}
+
+    /* ── Header ── */
+    .header{display:flex;align-items:center;justify-content:space-between}
+    .logo{font-size:1.6rem;font-weight:700;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.5)}
+    .logo span{font-size:.85rem;display:block;font-weight:400;opacity:.85}
+    .conn-badge{display:flex;align-items:center;gap:6px;font-size:.8rem;color:#fff;
+      background:rgba(0,0,0,.3);border-radius:20px;padding:5px 12px;cursor:pointer}
+    .dot{width:9px;height:9px;border-radius:50%;background:#e74c3c;transition:background .4s}
+    .dot.ok{background:#2ecc71}
+    .dot.connecting{background:#f39c12;animation:pulse .8s infinite alternate}
+    @keyframes pulse{to{opacity:.3}}
+
+    /* ── Connection panel ── */
+    #conn-panel{display:none;flex-direction:column;gap:8px}
+    #conn-panel.open{display:flex}
+    #conn-panel input{padding:9px 12px;border:1px solid #d0b08a;border-radius:8px;font-size:.9rem;width:100%}
+    #conn-panel input:focus{outline:none;border-color:#8B4513}
+    .row-btns{display:flex;gap:8px}
+
+    /* ── Buttons ── */
+    .btn{border:none;border-radius:10px;font-size:.9rem;font-weight:600;
+      cursor:pointer;padding:11px 16px;transition:filter .15s}
+    .btn:hover{filter:brightness(1.1)}
+    .btn:active{filter:brightness(.9)}
+    .btn-brown{background:#8B4513;color:#fff;flex:1}
+    .btn-green{background:#27ae60;color:#fff;flex:1}
+    .btn-red{background:#c0392b;color:#fff;flex:1}
+    .btn-orange{background:#e67e22;color:#fff;flex:1}
+    .btn-gray{background:#7f8c8d;color:#fff;flex:1}
+    .btn-sm{padding:8px 12px;font-size:.82rem}
+    .btn-full{width:100%;margin-top:6px}
+
+    /* ── Fault banner ── */
+    #fault-banner{display:none;background:#c0392b;color:#fff;border-radius:18px;
+      padding:18px;box-shadow:0 4px 20px rgba(0,0,0,.4);
+      animation:faultpulse 2s infinite alternate}
+    #fault-banner.show{display:block}
+    @keyframes faultpulse{to{background:#922b21}}
+    .fault-title{font-size:1.2rem;font-weight:700;margin-bottom:6px}
+    .fault-msg{font-size:.88rem;opacity:.9;margin-bottom:12px;line-height:1.5}
+
+    /* ── Temperature ── */
+    .temp-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+    .temp-big{font-size:3rem;font-weight:700;line-height:1}
+    .temp-label{font-size:.7rem;opacity:.7;margin-top:2px;text-transform:uppercase;letter-spacing:.05em}
+    .temp-right{text-align:right}
+    .thermostat-row{display:flex;align-items:center;justify-content:center;gap:12px;
+      background:rgba(0,0,0,.12);border-radius:12px;padding:10px}
+    .thermostat-row .btn{width:44px;height:44px;font-size:1.3rem;padding:0;border-radius:10px;flex:none}
+    #room-val{font-size:1.5rem;font-weight:700;min-width:48px;text-align:center}
+    .t-label{font-size:.78rem;opacity:.75}
+
+    /* ── Log cartridges ── */
+    .carts-row{display:flex;gap:12px}
+    .cart{flex:1;text-align:center}
+    .cart-title{font-size:.8rem;font-weight:600;color:#555;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em}
+    .bars{display:flex;flex-direction:column-reverse;gap:3px;align-items:center;height:130px;justify-content:flex-start}
+    .bar{width:52px;height:18px;border-radius:5px;background:#8B4513;transition:opacity .4s}
+    .bar.empty{opacity:.1}
+    .cart-count{font-size:1rem;font-weight:700;color:#8B4513;margin:6px 0 8px}
+
+    /* ── Status row ── */
+    .status-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .stat-box{background:#f5f1ec;border-radius:12px;padding:12px;text-align:center}
+    .stat-val{font-size:1.1rem;font-weight:700;color:#8B4513}
+    .stat-lbl{font-size:.72rem;color:#888;margin-top:3px;text-transform:uppercase;letter-spacing:.04em}
+    .stat-val.good{color:#27ae60}
+    .stat-val.warn{color:#e67e22}
+    .stat-val.bad{color:#c0392b}
+
+    /* ── Heartbeat ── */
+    .hb-row{display:flex;align-items:center;gap:8px;font-size:.85rem;color:#555}
+    .hb-dot{width:8px;height:8px;border-radius:50%;background:#e74c3c}
+    .hb-dot.ok{background:#2ecc71;animation:hbpulse 1.2s infinite}
+    @keyframes hbpulse{50%{opacity:.4}}
+
+    /* ── Settings dropdown ── */
+    .settings-toggle{display:flex;align-items:center;justify-content:space-between;
+      cursor:pointer;user-select:none}
+    .settings-toggle .arrow{transition:transform .25s;font-size:.9rem;color:#8B4513}
+    .settings-toggle .arrow.open{transform:rotate(180deg)}
+    .settings-body{display:none;margin-top:14px;border-top:1px solid #f0e0d0;padding-top:14px;
+      display:flex;flex-direction:column;gap:12px}
+    .settings-body.open{display:flex}
+    .settings-section{font-size:.8rem;color:#888;font-weight:600;text-transform:uppercase;
+      letter-spacing:.06em;margin-bottom:4px}
+    .input-row{display:flex;gap:8px;align-items:center}
+    .input-row input{flex:1;padding:8px 10px;border:1px solid #d0b08a;border-radius:8px;font-size:.9rem}
+    .input-row input:focus{outline:none;border-color:#8B4513}
+    .input-row label{font-size:.82rem;color:#555;white-space:nowrap}
+
+    /* ── Offline overlay ── */
+    #offline-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);
+      z-index:100;align-items:center;justify-content:center}
+    #offline-overlay.show{display:flex}
+    .offline-box{background:#fff;border-radius:18px;padding:24px;max-width:300px;text-align:center}
+    .offline-box h2{color:#c0392b;margin-bottom:8px}
+    .offline-box p{font-size:.88rem;color:#555;margin-bottom:16px}
+
+    /* ── Misc ── */
+    .section-title{font-size:.78rem;font-weight:600;color:#8B4513;text-transform:uppercase;
+      letter-spacing:.06em;margin-bottom:10px}
+    .divider{border:none;border-top:1px solid #f0e0d0;margin:4px 0}
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ── Header ── -->
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 2px">
+    <div class="logo">🔥 WoodMood<span>Remote Control</span></div>
+    <div class="conn-badge" onclick="toggleConnPanel()">
+      <div class="dot" id="conn-dot"></div>
+      <span id="conn-label">Disconnected</span>
+    </div>
+  </div>
+
+  <!-- ── Connection settings panel ── -->
+  <div class="card" id="conn-card">
+    <div class="section-title">Broker Connection</div>
+    <div id="conn-panel" class="open">
+      <input id="cfg-broker"   placeholder="Broker  e.g. abc123.s1.eu.hivemq.cloud" />
+      <input id="cfg-user"     placeholder="Username" />
+      <input id="cfg-pass"     placeholder="Password" type="password" />
+      <input id="cfg-serial"   placeholder="Device serial  e.g. JJQF9D" />
+      <div class="row-btns">
+        <button class="btn btn-brown" onclick="saveAndConnect()">Connect</button>
+        <button class="btn btn-gray btn-sm" onclick="clearCreds()">Clear saved</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Fault banner ── -->
+  <div id="fault-banner">
+    <div class="fault-title">⚠️ FAULT DETECTED</div>
+    <div class="fault-msg" id="fault-msg-text">—</div>
+    <button class="btn btn-red btn-full" onclick="resolveFault()">Resolve Fault</button>
+  </div>
+
+  <!-- ── Temperature ── -->
+  <div class="card-warm">
+    <div class="temp-row">
+      <div>
+        <div class="temp-big" id="stove-temp">—°</div>
+        <div class="temp-label">Stove temp</div>
+      </div>
+      <div class="temp-right">
+        <div class="temp-big" style="font-size:2rem" id="setpoint-val">—°</div>
+        <div class="temp-label">Setpoint</div>
+      </div>
+    </div>
+    <div class="thermostat-row">
+      <div class="t-label">Room °C</div>
+      <button class="btn btn-brown" onclick="adjustRoom(-1)">−</button>
+      <div id="room-val">—</div>
+      <button class="btn btn-brown" onclick="adjustRoom(+1)">+</button>
+      <div class="t-label">18–26</div>
+    </div>
+  </div>
+
+  <!-- ── Log cartridges ── -->
+  <div class="card">
+    <div class="section-title">Log Cartridges</div>
+    <div class="carts-row">
+      <div class="cart">
+        <div class="cart-title">Left</div>
+        <div class="bars" id="bars-left"></div>
+        <div class="cart-count" id="count-left">—</div>
+        <button class="btn btn-green btn-sm" style="width:100%" onclick="unlockDoor('l')">Unlock Left</button>
+      </div>
+      <div class="cart">
+        <div class="cart-title">Right</div>
+        <div class="bars" id="bars-right"></div>
+        <div class="cart-count" id="count-right">—</div>
+        <button class="btn btn-green btn-sm" style="width:100%" onclick="unlockDoor('r')">Unlock Right</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Status grid ── -->
+  <div class="card">
+    <div class="status-grid">
+      <div class="stat-box">
+        <div class="stat-val" id="sys-state-val">—</div>
+        <div class="stat-lbl">System</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-val" id="auto-insert-val">—</div>
+        <div class="stat-lbl">Auto Insert</div>
+      </div>
+    </div>
+    <div style="margin-top:10px;padding:10px;background:#f5f1ec;border-radius:10px">
+      <div class="hb-row">
+        <div class="hb-dot" id="hb-dot"></div>
+        <span id="hb-label">Waiting for heartbeat…</span>
+        <span style="margin-left:auto;font-size:.75rem;color:#aaa" id="hb-uptime"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Settings ── -->
+  <div class="card">
+    <div class="settings-toggle" onclick="toggleSettings()">
+      <span style="font-weight:600;color:#8B4513">Settings &amp; Controls</span>
+      <span class="arrow" id="settings-arrow">▼</span>
+    </div>
+    <div class="settings-body" id="settings-body">
+
+      <div>
+        <div class="settings-section">Log Count Correction</div>
+        <div class="input-row">
+          <label>Left</label>
+          <input type="number" id="set-log-l" min="0" max="6" value="0"/>
+          <label>Right</label>
+          <input type="number" id="set-log-r" min="0" max="6" value="0"/>
+          <button class="btn btn-brown btn-sm" onclick="sendLogCounts()">Set</button>
+        </div>
+      </div>
+
+      <hr class="divider"/>
+
+      <div>
+        <div class="settings-section">Rewind Cartridge</div>
+        <div class="row-btns">
+          <button class="btn btn-orange btn-sm" onclick="publish('cmd/rewind_l','1')">Rewind Left</button>
+          <button class="btn btn-orange btn-sm" onclick="publish('cmd/rewind_r','1')">Rewind Right</button>
+        </div>
+      </div>
+
+      <hr class="divider"/>
+
+      <div>
+        <div class="settings-section">Fault</div>
+        <button class="btn btn-red btn-full" onclick="resolveFault()">Resolve Fault</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Footer ── -->
+  <div style="text-align:center;font-size:.72rem;color:rgba(255,255,255,.5);padding-bottom:8px">
+    WoodMood Remote · <span id="footer-serial">—</span>
+  </div>
+
+</div>
+
+<!-- ── Offline overlay ── -->
+<div id="offline-overlay">
+  <div class="offline-box">
+    <h2>Disconnected</h2>
+    <p>Lost connection to broker.<br>Reconnecting automatically…</p>
+    <button class="btn btn-brown btn-full" onclick="reconnect()">Retry now</button>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// CONFIG  (saved to / loaded from localStorage)
+// ============================================================
+const LS = 'woodmood_cfg';
+let cfg = JSON.parse(localStorage.getItem(LS) || '{}');
+
+let client      = null;
+let prefix      = '';          // "WoodMood" + serial
+let roomTemp    = 20;          // local room-temp tracking
+let lastHbTime  = 0;
+let hbTimer     = null;
+let settingsOpen = false;
+
+// ============================================================
+// INIT
+// ============================================================
+window.addEventListener('load', () => {
+  if (cfg.broker && cfg.user && cfg.pass && cfg.serial) {
+    fillForm();
+    document.getElementById('conn-card').style.display = 'none';
+    connect();
+  }
+  renderBars('left', 0);
+  renderBars('right', 0);
+});
+
+function fillForm() {
+  document.getElementById('cfg-broker').value  = cfg.broker  || '';
+  document.getElementById('cfg-user').value    = cfg.user    || '';
+  document.getElementById('cfg-pass').value    = cfg.pass    || '';
+  document.getElementById('cfg-serial').value  = cfg.serial  || '';
+}
+
+// ============================================================
+// CONNECTION
+// ============================================================
+function saveAndConnect() {
+  cfg.broker = document.getElementById('cfg-broker').value.trim();
+  cfg.user   = document.getElementById('cfg-user').value.trim();
+  cfg.pass   = document.getElementById('cfg-pass').value.trim();
+  cfg.serial = document.getElementById('cfg-serial').value.trim();
+  if (!cfg.broker || !cfg.user || !cfg.serial) { alert('Fill in all fields'); return; }
+  localStorage.setItem(LS, JSON.stringify(cfg));
+  document.getElementById('conn-card').style.display = 'none';
+  connect();
+}
+
+function clearCreds() {
+  localStorage.removeItem(LS);
+  cfg = {};
+  fillForm();
+}
+
+function toggleConnPanel() {
+  const card = document.getElementById('conn-card');
+  if (card.style.display === 'none') {
+    fillForm();
+    card.style.display = '';
+  } else {
+    card.style.display = 'none';
+  }
+}
+
+function connect() {
+  prefix = 'WoodMood' + cfg.serial;
+  document.getElementById('footer-serial').textContent = prefix;
+
+  setConnState('connecting');
+
+  if (client) { try { client.end(true); } catch(e){} }
+
+  client = mqtt.connect(`wss://${cfg.broker}:8884/mqtt`, {
+    username:        cfg.user,
+    password:        cfg.pass,
+    clientId:        'woodmood-web-' + Math.random().toString(16).substr(2,8),
+    keepalive:       60,
+    reconnectPeriod: 5000,
+    connectTimeout:  10000,
+    rejectUnauthorized: false   // mirrors setInsecure() on the ESP32 side
+  });
+
+  client.on('connect', () => {
+    setConnState('ok');
+    document.getElementById('offline-overlay').classList.remove('show');
+    client.subscribe(prefix + '/status/#');
+  });
+
+  client.on('message', onMessage);
+
+  client.on('offline',     () => { setConnState('disconnected'); showOffline(); });
+  client.on('error',       () => { setConnState('disconnected'); });
+  client.on('reconnect',   () => { setConnState('connecting');   });
+}
+
+function reconnect() {
+  document.getElementById('offline-overlay').classList.remove('show');
+  connect();
+}
+
+function setConnState(s) {
+  const dot   = document.getElementById('conn-dot');
+  const label = document.getElementById('conn-label');
+  dot.className = 'dot' + (s==='ok' ? ' ok' : s==='connecting' ? ' connecting' : '');
+  label.textContent = s==='ok' ? 'Connected' : s==='connecting' ? 'Connecting…' : 'Disconnected';
+}
+
+function showOffline() {
+  // Only show overlay after being connected at least once
+  if (lastHbTime > 0) document.getElementById('offline-overlay').classList.add('show');
+}
+
+// ============================================================
+// MQTT MESSAGES
+// ============================================================
+function onMessage(topic, payloadBuf) {
+  const payload = payloadBuf.toString();
+  const sub     = topic.replace(prefix + '/', '');
+
+  // Auto-ACK heartbeat immediately — keeps auto-insertion gate open
+  if (sub === 'status/heartbeat') {
+    publish('cmd/heartbeat_ack', '1');
+    lastHbTime = Date.now();
+    const dot   = document.getElementById('hb-dot');
+    const label = document.getElementById('hb-label');
+    dot.className = 'hb-dot ok';
+    label.textContent = 'Heartbeat active — auto-insertion enabled';
+    clearTimeout(hbTimer);
+    hbTimer = setTimeout(() => {
+      dot.className = 'hb-dot';
+      label.textContent = 'Heartbeat lost — auto-insertion suspended';
+    }, 31000);  // slightly longer than the 30 s ESP32 timeout
+    return;
+  }
+
+  if (sub === 'status/full') {
+    try { applyFull(JSON.parse(payload)); } catch(e) {}
+    return;
+  }
+
+  if (sub === 'status/fault') {
+    setFault(payload === '1', document.getElementById('fault-msg-text').textContent);
+    return;
+  }
+
+  if (sub === 'status/fault_msg') {
+    document.getElementById('fault-msg-text').textContent = payload || 'Unknown fault';
+    return;
+  }
+
+  if (sub === 'status/temperature') {
+    document.getElementById('stove-temp').textContent = payload + '°';
+    return;
+  }
+
+  if (sub === 'status/log_level_l') {
+    renderBars('left',  parseInt(payload) || 0);
+    document.getElementById('count-left').textContent  = payload + ' logs';
+    document.getElementById('set-log-l').value = payload;
+    return;
+  }
+
+  if (sub === 'status/log_level_r') {
+    renderBars('right', parseInt(payload) || 0);
+    document.getElementById('count-right').textContent = payload + ' logs';
+    document.getElementById('set-log-r').value = payload;
+    return;
+  }
+}
+
+// ============================================================
+// APPLY FULL STATUS JSON
+// ============================================================
+function applyFull(d) {
+  if (d.stove_temp !== undefined)
+    document.getElementById('stove-temp').textContent  = d.stove_temp + '°';
+
+  if (d.setpoint !== undefined)
+    document.getElementById('setpoint-val').textContent = d.setpoint + '°';
+
+  if (d.log_l !== undefined) { renderBars('left',  d.log_l); document.getElementById('count-left').textContent  = d.log_l + ' logs'; }
+  if (d.log_r !== undefined) { renderBars('right', d.log_r); document.getElementById('count-right').textContent = d.log_r + ' logs'; }
+
+  if (d.fault !== undefined) setFault(d.fault);
+
+  const sysEl = document.getElementById('sys-state-val');
+  if (d.system_active !== undefined) {
+    sysEl.textContent  = d.system_active ? 'Active' : 'Standby';
+    sysEl.className    = 'stat-val ' + (d.system_active ? 'good' : 'warn');
+  }
+
+  const aiEl = document.getElementById('auto-insert-val');
+  if (d.auto_insert !== undefined) {
+    aiEl.textContent = d.auto_insert ? 'Enabled' : 'Disabled';
+    aiEl.className   = 'stat-val ' + (d.auto_insert ? 'good' : 'warn');
+  }
+
+  if (d.uptime !== undefined) {
+    const h = Math.floor(d.uptime/3600), m = Math.floor((d.uptime%3600)/60);
+    document.getElementById('hb-uptime').textContent = `up ${h}h ${m}m`;
+  }
+}
+
+// ============================================================
+// FAULT
+// ============================================================
+function setFault(active, msg) {
+  const banner = document.getElementById('fault-banner');
+  if (active || active === '1' || active === true) {
+    banner.classList.add('show');
+  } else {
+    banner.classList.remove('show');
+  }
+}
+
+// ============================================================
+// LOG CARTRIDGE BARS
+// ============================================================
+function renderBars(side, count) {
+  const MAX = 6;
+  const el  = document.getElementById('bars-' + side);
+  el.innerHTML = '';
+  for (let i = 0; i < MAX; i++) {
+    const bar = document.createElement('div');
+    bar.className = 'bar' + (i >= count ? ' empty' : '');
+    el.appendChild(bar);
+  }
+}
+
+// ============================================================
+// COMMANDS
+// ============================================================
+function publish(subtopic, payload) {
+  if (!client || !client.connected) { alert('Not connected to broker'); return; }
+  client.publish(prefix + '/' + subtopic, String(payload), { qos:1 });
+}
+
+function adjustRoom(delta) {
+  const prev = (roomTemp === null || isNaN(roomTemp)) ? 20 : roomTemp;
+  roomTemp = Math.min(26, Math.max(18, prev + delta));
+  document.getElementById('room-val').textContent = roomTemp;
+  publish('cmd/room_temp', roomTemp);
+}
+
+function unlockDoor(side) {
+  if (!confirm('Unlock ' + (side==='l'?'LEFT':'RIGHT') + ' door?')) return;
+  publish('cmd/door_' + side, '1');
+}
+
+function resolveFault() {
+  if (!confirm('Resolve fault and attempt motor recovery?')) return;
+  publish('cmd/resolve_fault', '1');
+}
+
+function sendLogCounts() {
+  const l = parseInt(document.getElementById('set-log-l').value) || 0;
+  const r = parseInt(document.getElementById('set-log-r').value) || 0;
+  publish('cmd/log_level_l', l);
+  publish('cmd/log_level_r', r);
+}
+
+// ============================================================
+// UI TOGGLES
+// ============================================================
+function toggleSettings() {
+  settingsOpen = !settingsOpen;
+  document.getElementById('settings-body').className = 'settings-body' + (settingsOpen ? ' open' : '');
+  document.getElementById('settings-arrow').className = 'arrow' + (settingsOpen ? ' open' : '');
+}
+</script>
+</body>
+</html>
