@@ -41,7 +41,8 @@
     .sys-btn.startup  {background:#d4a04a;color:#fff;cursor:default}
     .sys-btn.auto     {background:#27ae60;color:#fff;cursor:pointer}
     .sys-btn.auto:hover{filter:brightness(1.08)}
-    .sys-btn.cooldown {background:#2980b9;color:#fff;cursor:default}
+    .sys-btn.cooldown {background:#2980b9;color:#fff;cursor:pointer}
+    .sys-btn.cooldown:hover{filter:brightness(1.1)}
     .sys-btn.fault    {background:#c0392b;color:#fff;cursor:default;
       animation:faultpulse 2s infinite alternate}
     @keyframes faultpulse{to{background:#922b21}}
@@ -675,12 +676,17 @@ function applySystemState(state) {
 }
 
 function sysButtonClick() {
-  if (systemState !== 'auto' && systemState !== 'active') return;
-  if (!confirm('Switch to cooldown mode?')) return;
-  inCooldown = true;
-  publish('cmd/cooldown', '1');
-  // Optimistic update — firmware will confirm via status/system_state
-  applySystemState('cooldown');
+  if (systemState === 'auto' || systemState === 'active') {
+    if (!confirm('Switch to cooldown mode?')) return;
+    inCooldown = true;
+    publish('cmd/cooldown', '1');
+    applySystemState('cooldown');          // optimistic — firmware confirms via status/system_state
+  } else if (systemState === 'cooldown') {
+    if (!confirm('Cancel cooldown and return to automatic operation?')) return;
+    inCooldown = false;
+    publish('cmd/cooldown', '0');
+    applySystemState('auto');             // optimistic — firmware confirms via status/system_state
+  }
 }
 
 // ============================================================
