@@ -165,6 +165,15 @@
 
     /* ── Simulate button ── */
     .btn-sim{background:#4a3728;color:#f0d9c0;border:2px dashed #8B7355}
+
+    /* ── Heap monitor ── */
+    .heap-row{display:flex;align-items:center;gap:10px;padding:7px 12px;
+      background:rgba(0,0,0,.28);border-radius:10px;font-size:.72rem;
+      color:rgba(255,255,255,.75)}
+    .heap-lbl{opacity:.7;white-space:nowrap}
+    .heap-bar-wrap{flex:1;background:rgba(255,255,255,.18);border-radius:4px;height:5px;overflow:hidden}
+    .heap-bar-fill{height:100%;border-radius:4px;transition:width .6s,background .6s;background:#2ecc71;width:0%}
+    .heap-val{font-weight:700;white-space:nowrap;min-width:48px;text-align:right}
   </style>
 </head>
 <body>
@@ -367,6 +376,17 @@
     </div>
   </div>
 
+  <!-- ── Heap Monitor ── -->
+  <div id="heap-monitor" style="display:none">
+    <div class="heap-row">
+      <span class="heap-lbl">Heap</span>
+      <div class="heap-bar-wrap"><div class="heap-bar-fill" id="heap-bar"></div></div>
+      <span class="heap-val" id="heap-free-val">—</span>
+      <span class="heap-lbl">·  min</span>
+      <span class="heap-val" id="heap-min-val">—</span>
+    </div>
+  </div>
+
   <!-- ── Footer ── -->
   <div style="text-align:center;font-size:.72rem;color:rgba(255,255,255,.5);padding-bottom:8px">
     WoodMood · <span id="footer-serial">—</span>
@@ -559,6 +579,14 @@ function onMessage(topic, payloadBuf) {
   if (sub === 'status/maint_joint')  { document.getElementById('joint-days').textContent = payload + ' days'; return; }
   if (sub === 'status/maint_ramon')  { document.getElementById('ramon-days').textContent = payload + ' days since last'; return; }
   if (sub === 'status/maint_seal')   { document.getElementById('seal-days').textContent  = payload + ' days'; return; }
+
+  if (sub === 'status/heap') {
+    try {
+      const h = JSON.parse(payload);
+      if (h.free !== undefined) applyHeap(h.free, h.min_free, h.max_alloc);
+    } catch(e) {}
+    return;
+  }
 }
 
 // ============================================================
@@ -591,6 +619,7 @@ function applyFull(d) {
     const h = Math.floor(d.uptime/3600), m = Math.floor((d.uptime%3600)/60);
     document.getElementById('footer-serial').textContent = prefix + '  ·  up ' + h + 'h ' + m + 'm';
   }
+  if (d.heap_free !== undefined) applyHeap(d.heap_free, d.heap_min || 0, d.heap_max_alloc || 0);
   if (d.maint_joint !== undefined) document.getElementById('joint-days').textContent = d.maint_joint + ' days';
   if (d.maint_ramon !== undefined) document.getElementById('ramon-days').textContent = d.maint_ramon + ' days since last';
   if (d.maint_seal  !== undefined) document.getElementById('seal-days').textContent  = d.maint_seal  + ' days';
@@ -794,6 +823,30 @@ function showToast(msg) {
   el.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ============================================================
+// HEAP MONITOR
+// ============================================================
+function applyHeap(freeB, minFreeB, maxAllocB) {
+  document.getElementById('heap-monitor').style.display = '';
+
+  const freeKB    = (freeB    / 1024).toFixed(1);
+  const minFreeKB = (minFreeB / 1024).toFixed(1);
+
+  document.getElementById('heap-free-val').textContent = freeKB    + ' KB';
+  document.getElementById('heap-min-val').textContent  = minFreeKB + ' KB';
+
+  // Bar: ESP32-S3 internal SRAM usable ~330 KB (rough upper bound)
+  const pct = Math.min(100, Math.round(freeB / 337920 * 100));
+  const bar = document.getElementById('heap-bar');
+  bar.style.width = pct + '%';
+
+  // Colour coding:  red < 20 KB  |  orange < 50 KB  |  green ≥ 50 KB
+  const colour = minFreeB < 20000 ? '#e74c3c' : minFreeB < 50000 ? '#f39c12' : '#2ecc71';
+  bar.style.background = colour;
+  document.getElementById('heap-min-val').style.color =
+    minFreeB < 20000 ? '#e74c3c' : minFreeB < 50000 ? '#f39c12' : 'rgba(255,255,255,.75)';
 }
 
 // ============================================================
