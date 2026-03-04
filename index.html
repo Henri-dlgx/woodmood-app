@@ -155,6 +155,16 @@
       letter-spacing:.07em;margin-bottom:12px}
     .divider{border:none;border-top:1px solid #f0e0d0;margin:0}
     .gap-col{display:flex;flex-direction:column;gap:8px}
+
+    /* ── Toast ── */
+    #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+      background:#2b1a0e;color:#f0d9c0;padding:10px 20px;border-radius:20px;
+      font-size:.84rem;font-weight:600;opacity:0;pointer-events:none;
+      transition:opacity .3s;z-index:200;white-space:nowrap}
+    #toast.show{opacity:1}
+
+    /* ── Simulate button ── */
+    .btn-sim{background:#4a3728;color:#f0d9c0;border:2px dashed #8B7355}
   </style>
 </head>
 <body>
@@ -241,7 +251,7 @@
       <div class="time-col">
         <div class="time-label">Time<br>Left</div>
         <div class="time-val" id="burn-time-val">—</div>
-        <div class="time-unit">hours</div>
+        <div class="time-unit" id="burn-time-unit">estimated</div>
       </div>
 
       <!-- Right -->
@@ -257,6 +267,14 @@
       </div>
 
     </div>
+
+    <!-- Simulate insertion (test tool) -->
+    <div style="margin-top:14px;border-top:1px solid #f0e0d0;padding-top:12px">
+      <button class="btn btn-sim btn-full" onclick="simulateInsertion()" style="flex:none;width:100%">
+        ⚙ Simulate Insertion
+      </button>
+    </div>
+
   </div>
 
   <!-- ── Settings ── -->
@@ -356,6 +374,9 @@
 
 </div>
 
+<!-- ── Toast ── -->
+<div id="toast"></div>
+
 <!-- ── Offline overlay ── -->
 <div id="offline-overlay">
   <div class="offline-box">
@@ -385,6 +406,15 @@ let faultSide        = null;        // 'l' | 'r'
 let faultActionPhase = 'unlock';    // 'unlock' | 'resolve'
 let faultDoorTimer   = null;
 let insulation       = null;
+
+// Derived state tracking
+let stoveTemp   = null;   // latest stove temp (°C) from MQTT
+let setpointVal = null;   // latest setpoint (°C) from MQTT
+let sysActive   = false;  // system_active from status/full
+let faultActive = false;  // fault active flag
+let inCooldown  = false;  // user manually entered cooldown
+let logL        = 0;      // current left log count
+let logR        = 0;      // current right log count
 
 // ============================================================
 // INIT
@@ -505,19 +535,21 @@ function onMessage(topic, payloadBuf) {
   if (sub === 'status/fault_side') { faultSide = payload;       return; }
 
   if (sub === 'status/temperature') {
-    document.getElementById('stove-temp').textContent = payload + '°'; return;
+    stoveTemp = parseFloat(payload);
+    document.getElementById('stove-temp').textContent = payload + '°';
+    updateSystemState(); return;
   }
   if (sub === 'status/log_level_l') {
-    renderBars('left',  parseInt(payload)||0);
-    document.getElementById('count-left').textContent = payload + ' logs'; return;
+    logL = parseInt(payload) || 0;
+    renderBars('left', logL);
+    document.getElementById('count-left').textContent = logL + ' logs';
+    calcBurnTime(); return;
   }
   if (sub === 'status/log_level_r') {
-    renderBars('right', parseInt(payload)||0);
-    document.getElementById('count-right').textContent = payload + ' logs'; return;
-  }
-  if (sub === 'status/burn_time') {
-    const h = parseFloat(payload);
-    document.getElementById('burn-time-val').textContent = isNaN(h) ? '—' : h.toFixed(1); return;
+    logR = parseInt(payload) || 0;
+    renderBars('right', logR);
+    document.getElementById('count-right').textContent = logR + ' logs';
+    calcBurnTime(); return;
   }
   if (sub === 'status/system_state') { applySystemState(payload); return; }
   if (sub === 'status/maint_joint')  { document.getElementById('joint-days').textContent = payload + ' days'; return; }
@@ -529,17 +561,27 @@ function onMessage(topic, payloadBuf) {
 // FULL STATUS JSON
 // ============================================================
 function applyFull(d) {
-  if (d.stove_temp     !== undefined) document.getElementById('stove-temp').textContent    = d.stove_temp + '°';
-  if (d.setpoint       !== undefined) document.getElementById('setpoint-val').textContent  = d.setpoint + '°';
-  if (d.log_l          !== undefined) { renderBars('left',  d.log_l); document.getElementById('count-left').textContent  = d.log_l + ' logs'; }
-  if (d.log_r          !== undefined) { renderBars('right', d.log_r); document.getElementById('count-right').textContent = d.log_r + ' logs'; }
-  if (d.fault          !== undefined) setFault(d.fault);
-  if (d.fault_side     !== undefined) faultSide = d.fault_side;
-  if (d.system_state   !== undefined) applySystemState(d.system_state);
-  if (d.burn_time      !== undefined) {
-    const h = parseFloat(d.burn_time);
-    document.getElementById('burn-time-val').textContent = isNaN(h) ? '—' : h.toFixed(1);
+  if (d.stove_temp !== undefined) {
+    stoveTemp = parseFloat(d.stove_temp);
+    document.getElementById('stove-temp').textContent = d.stove_temp + '°';
   }
+  if (d.setpoint !== undefined) {
+    setpointVal = parseFloat(d.setpoint);
+    document.getElementById('setpoint-val').textContent = d.setpoint + '°';
+  }
+  if (d.log_l !== undefined) {
+    logL = parseInt(d.log_l) || 0;
+    renderBars('left',  logL);
+    document.getElementById('count-left').textContent = logL + ' logs';
+  }
+  if (d.log_r !== undefined) {
+    logR = parseInt(d.log_r) || 0;
+    renderBars('right', logR);
+    document.getElementById('count-right').textContent = logR + ' logs';
+  }
+  if (d.system_active !== undefined) sysActive = !!d.system_active;
+  if (d.fault         !== undefined) setFault(d.fault);
+  if (d.fault_side    !== undefined) faultSide = d.fault_side;
   if (d.uptime !== undefined) {
     const h = Math.floor(d.uptime/3600), m = Math.floor((d.uptime%3600)/60);
     document.getElementById('footer-serial').textContent = prefix + '  ·  up ' + h + 'h ' + m + 'm';
@@ -547,15 +589,42 @@ function applyFull(d) {
   if (d.maint_joint !== undefined) document.getElementById('joint-days').textContent = d.maint_joint + ' days';
   if (d.maint_ramon !== undefined) document.getElementById('ramon-days').textContent = d.maint_ramon + ' days since last';
   if (d.maint_seal  !== undefined) document.getElementById('seal-days').textContent  = d.maint_seal  + ' days';
+
+  calcBurnTime();
+  updateSystemState();
 }
 
 // ============================================================
 // SYSTEM STATE
 // ============================================================
+
+// Derive state from live data — called whenever temp, setpoint, or system_active updates
+function updateSystemState() {
+  if (faultActive)  { applySystemState('fault');    return; }
+  if (inCooldown)   { applySystemState('cooldown'); return; }
+
+  // Startup until stove reaches 85 % of setpoint (mirrors MODE_STARTUP on ESP32)
+  if (stoveTemp !== null && setpointVal !== null && setpointVal > 0) {
+    if (stoveTemp >= setpointVal * 0.85 && sysActive) {
+      applySystemState('auto');
+    } else {
+      applySystemState('startup');
+    }
+  } else {
+    applySystemState('startup');
+  }
+}
+
+// Accept explicit state from ESP32 if it publishes status/system_state
 function applySystemState(state) {
   systemState = state;
   const btn    = document.getElementById('sys-btn');
-  const labels = { startup:'Startup', auto:'Automatic Operation', cooldown:'Cooldown', fault:'Fault Condition' };
+  const labels = {
+    startup:  'Startup',
+    auto:     'Automatic Operation',
+    cooldown: 'Cooldown',
+    fault:    'Fault Condition',
+  };
   btn.textContent = labels[state] || state;
   btn.className   = 'sys-btn ' + (state || 'startup');
 }
@@ -563,15 +632,18 @@ function applySystemState(state) {
 function sysButtonClick() {
   if (systemState !== 'auto') return;
   if (!confirm('Switch to cooldown mode?')) return;
+  inCooldown = true;
   publish('cmd/cooldown', '1');
+  updateSystemState();
 }
 
 // ============================================================
 // FAULT
 // ============================================================
 function setFault(active) {
+  faultActive = !!(active || active === '1' || active === true);
   const banner = document.getElementById('fault-banner');
-  if (active || active === '1' || active === true) {
+  if (faultActive) {
     banner.classList.add('show');
     faultActionPhase = 'unlock';
     const btn = document.getElementById('fault-action-btn');
@@ -582,6 +654,7 @@ function setFault(active) {
     banner.classList.remove('show');
     clearTimeout(faultDoorTimer);
   }
+  updateSystemState();
 }
 
 function setFaultMsg(msg) {
@@ -604,6 +677,7 @@ function faultActionClick() {
   } else {
     if (!confirm('Resolve fault and attempt motor recovery?')) return;
     publish('cmd/resolve_fault', '1');
+    inCooldown = false;
     setFault(false);
   }
 }
@@ -647,9 +721,62 @@ function updateLogCount(side) {
   const val = prompt('Log count for ' + (side==='l'?'Left':'Right') + ' cartridge (0–6):', cur === '—' ? '0' : cur);
   if (val === null) return;
   const n = Math.min(6, Math.max(0, parseInt(val) || 0));
+  if (side === 'l') logL = n; else logR = n;
   publish('cmd/log_level_' + side, n);
   renderBars(side === 'l' ? 'left' : 'right', n);
   document.getElementById(id).textContent = n + ' logs';
+  calcBurnTime();
+}
+
+// ============================================================
+// BURN TIME — 40 min per log
+// ============================================================
+function calcBurnTime() {
+  const total    = logL + logR;
+  const el       = document.getElementById('burn-time-val');
+  const unitEl   = document.getElementById('burn-time-unit');
+  if (total === 0) { el.textContent = '—'; unitEl.textContent = ''; return; }
+  const totalMins = total * 40;
+  const h = Math.floor(totalMins / 60);
+  const m = totalMins % 60;
+  el.textContent   = h > 0 ? (m > 0 ? h + 'h ' + m + 'm' : h + 'h') : m + 'm';
+  unitEl.textContent = 'estimated';
+}
+
+// ============================================================
+// SIMULATE INSERTION
+// ============================================================
+function simulateInsertion() {
+  // Pick the side with more logs; prefer left on tie
+  let side;
+  if (logL === 0 && logR === 0) { showToast('No logs remaining to simulate'); return; }
+  side = (logL >= logR) ? 'l' : 'r';
+
+  if (side === 'l') {
+    logL = Math.max(0, logL - 1);
+    renderBars('left', logL);
+    document.getElementById('count-left').textContent = logL + ' logs';
+    publish('cmd/log_level_l', logL);
+  } else {
+    logR = Math.max(0, logR - 1);
+    renderBars('right', logR);
+    document.getElementById('count-right').textContent = logR + ' logs';
+    publish('cmd/log_level_r', logR);
+  }
+  calcBurnTime();
+  showToast('Insertion simulated — 1 log consumed (' + (side==='l'?'Left':'Right') + ')');
+}
+
+// ============================================================
+// TOAST
+// ============================================================
+let toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
 }
 
 // ============================================================
