@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>🔥 WoodMood</title>
+  <title>WoodMood</title>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <style>
     /* ── Base ── */
@@ -17,98 +17,130 @@
 
     /* ── Cards ── */
     .card{background:#fff;border-radius:18px;padding:18px;box-shadow:0 4px 20px rgba(0,0,0,.35)}
-    .card-dark{background:#2b1a0e;color:#f0d9c0;border-radius:18px;padding:18px;box-shadow:0 4px 20px rgba(0,0,0,.45)}
     .card-warm{background:#CD853F;color:#fff;border-radius:18px;padding:18px;box-shadow:0 4px 20px rgba(0,0,0,.35)}
 
     /* ── Header ── */
-    .header{display:flex;align-items:center;justify-content:space-between}
     .logo{font-size:1.6rem;font-weight:700;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.5)}
-    .logo span{font-size:.85rem;display:block;font-weight:400;opacity:.85}
-    .conn-badge{display:flex;align-items:center;gap:6px;font-size:.8rem;color:#fff;
-      background:rgba(0,0,0,.3);border-radius:20px;padding:5px 12px;cursor:pointer}
-    .dot{width:9px;height:9px;border-radius:50%;background:#e74c3c;transition:background .4s}
-    .dot.ok{background:#2ecc71}
-    .dot.connecting{background:#f39c12;animation:pulse .8s infinite alternate}
-    @keyframes pulse{to{opacity:.3}}
+    .status-badge{display:flex;align-items:center;gap:7px;font-size:.82rem;color:#fff;
+      background:rgba(0,0,0,.3);border-radius:20px;padding:6px 14px;cursor:pointer}
+    .status-dot{width:11px;height:11px;border-radius:50%;background:#e74c3c;
+      transition:background .4s;flex-shrink:0}
+    .status-dot.connecting{background:#f39c12;animation:blink .8s infinite alternate}
+    .status-dot.connected {background:#f39c12}        /* orange = MQTT ok, no heartbeat */
+    .status-dot.alive     {background:#2ecc71;animation:hbpulse 1.2s infinite} /* green = heartbeat */
+    @keyframes blink   {to{opacity:.3}}
+    @keyframes hbpulse {50%{opacity:.4}}
 
     /* ── Connection panel ── */
-    #conn-panel{display:none;flex-direction:column;gap:8px}
-    #conn-panel.open{display:flex}
-    #conn-panel input{padding:9px 12px;border:1px solid #d0b08a;border-radius:8px;font-size:.9rem;width:100%}
-    #conn-panel input:focus{outline:none;border-color:#8B4513}
-    .row-btns{display:flex;gap:8px}
+    .conn-input{padding:9px 12px;border:1px solid #d0b08a;border-radius:8px;font-size:.9rem;width:100%}
+    .conn-input:focus{outline:none;border-color:#8B4513}
 
-    /* ── Buttons ── */
-    .btn{border:none;border-radius:10px;font-size:.9rem;font-weight:600;
-      cursor:pointer;padding:11px 16px;transition:filter .15s}
-    .btn:hover{filter:brightness(1.1)}
-    .btn:active{filter:brightness(.9)}
-    .btn-brown{background:#8B4513;color:#fff;flex:1}
-    .btn-green{background:#27ae60;color:#fff;flex:1}
-    .btn-red{background:#c0392b;color:#fff;flex:1}
-    .btn-orange{background:#e67e22;color:#fff;flex:1}
-    .btn-gray{background:#7f8c8d;color:#fff;flex:1}
-    .btn-sm{padding:8px 12px;font-size:.82rem}
-    .btn-full{width:100%;margin-top:6px}
+    /* ── System state button ── */
+    .sys-btn{width:100%;border:none;border-radius:12px;font-size:1rem;font-weight:700;
+      padding:14px;letter-spacing:.03em;transition:filter .15s}
+    .sys-btn.startup  {background:#d4a04a;color:#fff;cursor:default}
+    .sys-btn.auto     {background:#27ae60;color:#fff;cursor:pointer}
+    .sys-btn.auto:hover{filter:brightness(1.08)}
+    .sys-btn.cooldown {background:#2980b9;color:#fff;cursor:default}
+    .sys-btn.fault    {background:#c0392b;color:#fff;cursor:default;
+      animation:faultpulse 2s infinite alternate}
+    @keyframes faultpulse{to{background:#922b21}}
 
     /* ── Fault banner ── */
     #fault-banner{display:none;background:#c0392b;color:#fff;border-radius:18px;
-      padding:18px;box-shadow:0 4px 20px rgba(0,0,0,.4);
-      animation:faultpulse 2s infinite alternate}
+      padding:18px;box-shadow:0 4px 20px rgba(0,0,0,.4)}
     #fault-banner.show{display:block}
-    @keyframes faultpulse{to{background:#922b21}}
-    .fault-title{font-size:1.2rem;font-weight:700;margin-bottom:6px}
-    .fault-msg{font-size:.88rem;opacity:.9;margin-bottom:12px;line-height:1.5}
+    .fault-title{font-size:1.05rem;font-weight:700;margin-bottom:10px}
+    .fault-steps{font-size:.86rem;line-height:1;margin-bottom:14px}
+    .fault-step{display:flex;gap:8px;padding:5px 0}
+    .fault-step-num{font-weight:700;min-width:20px;opacity:.8}
 
-    /* ── Temperature ── */
-    .temp-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
-    .temp-big{font-size:3rem;font-weight:700;line-height:1}
-    .temp-label{font-size:.7rem;opacity:.7;margin-top:2px;text-transform:uppercase;letter-spacing:.05em}
-    .temp-right{text-align:right}
-    .thermostat-row{display:flex;align-items:center;justify-content:center;gap:12px;
-      background:rgba(0,0,0,.12);border-radius:12px;padding:10px}
-    .thermostat-row .btn{width:44px;height:44px;font-size:1.3rem;padding:0;border-radius:10px;flex:none}
-    #room-val{font-size:1.5rem;font-weight:700;min-width:48px;text-align:center}
-    .t-label{font-size:.78rem;opacity:.75}
+    /* ── Buttons ── */
+    .btn{border:none;border-radius:10px;font-size:.9rem;font-weight:600;
+      cursor:pointer;padding:10px 14px;transition:filter .15s;flex:1}
+    .btn:hover{filter:brightness(1.1)}
+    .btn:active{filter:brightness(.9)}
+    .btn-brown {background:#8B4513;color:#fff}
+    .btn-green {background:#28a745;color:#fff}
+    .btn-red   {background:#dc3545;color:#fff}
+    .btn-orange{background:#e67e22;color:#fff}
+    .btn-blue  {background:#2980b9;color:#fff}
+    .btn-gray  {background:#7f8c8d;color:#fff}
+    .btn-sm    {padding:7px 10px;font-size:.82rem}
+    .btn-full  {width:100%}
+    .row-btns  {display:flex;gap:8px}
+
+    /* ── Temperature card ── */
+    .room-row{display:flex;align-items:center;justify-content:center;gap:12px;
+      background:rgba(0,0,0,.12);border-radius:12px;padding:10px;margin-bottom:14px}
+    .room-row .adj-btn{width:44px;height:44px;font-size:1.3rem;padding:0;border-radius:10px;
+      border:none;background:#8B4513;color:#fff;cursor:pointer;flex-shrink:0;
+      font-weight:700;transition:filter .15s}
+    .room-row .adj-btn:hover{filter:brightness(1.1)}
+    #room-val{font-size:1.5rem;font-weight:700;min-width:52px;text-align:center;color:#fff}
+    .room-unit{font-size:.78rem;opacity:.75}
+    .temps-row{display:flex}
+    .temp-half{flex:1;text-align:center;padding:8px 6px}
+    .temp-half+.temp-half{border-left:1px solid rgba(255,255,255,.25)}
+    .temp-big{font-size:2.6rem;font-weight:700;line-height:1}
+    .temp-small-label{font-size:.65rem;opacity:.65;margin-top:5px;line-height:1.35;
+      text-transform:uppercase;letter-spacing:.04em}
 
     /* ── Log cartridges ── */
-    .carts-row{display:flex;gap:12px}
-    .cart{flex:1;text-align:center}
-    .cart-title{font-size:.8rem;font-weight:600;color:#555;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em}
-    .bars{display:flex;flex-direction:column-reverse;gap:3px;align-items:center;height:130px;justify-content:flex-start}
-    .bar{width:52px;height:18px;border-radius:5px;background:#8B4513;transition:opacity .4s}
-    .bar.empty{opacity:.1}
-    .cart-count{font-size:1rem;font-weight:700;color:#8B4513;margin:6px 0 8px}
+    .cart-grid{display:grid;grid-template-columns:1fr 56px 1fr;gap:0;align-items:start}
+    .cart-col{display:flex;flex-direction:column;align-items:center;gap:5px}
+    .cart-col.left {border-right:1px solid #f0e0d0;padding-right:10px}
+    .cart-col.right{border-left: 1px solid #f0e0d0;padding-left: 10px}
+    .cart-title{font-size:.75rem;font-weight:700;color:#666;text-transform:uppercase;
+      letter-spacing:.06em;margin-bottom:2px}
+    .bars{display:flex;flex-direction:column-reverse;gap:5px;align-items:center;
+      min-height:186px;justify-content:flex-start;padding-top:2px;width:100%}
+    .bar{width:100%;height:26px;border-radius:6px;background:#8B7355;transition:opacity .4s}
+    .bar.empty{background:transparent;border:2px dashed #d9c8b8}
+    .cart-count{font-size:.9rem;font-weight:700;color:#8B4513}
+    .cart-btn-stack{display:flex;flex-direction:column;gap:5px;width:100%;margin-top:4px}
+    .cart-btn-stack .btn{font-size:.76rem;padding:8px 4px;width:100%;flex:none}
+    .time-col{display:flex;flex-direction:column;align-items:center;justify-content:center;
+      padding:12px 0;color:#8B4513}
+    .time-label{font-size:.6rem;font-weight:700;text-transform:uppercase;
+      letter-spacing:.06em;color:#aaa;margin-bottom:5px;text-align:center}
+    .time-val{font-size:1.15rem;font-weight:700;color:#8B4513;text-align:center}
+    .time-unit{font-size:.64rem;color:#bbb;text-align:center}
 
-    /* ── Status row ── */
-    .status-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    .stat-box{background:#f5f1ec;border-radius:12px;padding:12px;text-align:center}
-    .stat-val{font-size:1.1rem;font-weight:700;color:#8B4513}
-    .stat-lbl{font-size:.72rem;color:#888;margin-top:3px;text-transform:uppercase;letter-spacing:.04em}
-    .stat-val.good{color:#27ae60}
-    .stat-val.warn{color:#e67e22}
-    .stat-val.bad{color:#c0392b}
-
-    /* ── Heartbeat ── */
-    .hb-row{display:flex;align-items:center;gap:8px;font-size:.85rem;color:#555}
-    .hb-dot{width:8px;height:8px;border-radius:50%;background:#e74c3c}
-    .hb-dot.ok{background:#2ecc71;animation:hbpulse 1.2s infinite}
-    @keyframes hbpulse{50%{opacity:.4}}
-
-    /* ── Settings dropdown ── */
+    /* ── Settings ── */
     .settings-toggle{display:flex;align-items:center;justify-content:space-between;
       cursor:pointer;user-select:none}
     .settings-toggle .arrow{transition:transform .25s;font-size:.9rem;color:#8B4513}
     .settings-toggle .arrow.open{transform:rotate(180deg)}
-    .settings-body{display:none;margin-top:14px;border-top:1px solid #f0e0d0;padding-top:14px;
-      flex-direction:column;gap:12px}
+    .settings-body{display:none;margin-top:14px;border-top:1px solid #f0e0d0;
+      padding-top:16px;flex-direction:column;gap:18px}
     .settings-body.open{display:flex}
-    .settings-section{font-size:.8rem;color:#888;font-weight:600;text-transform:uppercase;
-      letter-spacing:.06em;margin-bottom:4px}
-    .input-row{display:flex;gap:8px;align-items:center}
-    .input-row input{flex:1;padding:8px 10px;border:1px solid #d0b08a;border-radius:8px;font-size:.9rem}
-    .input-row input:focus{outline:none;border-color:#8B4513}
-    .input-row label{font-size:.82rem;color:#555;white-space:nowrap}
+    .settings-section{font-size:.72rem;color:#bbb;font-weight:700;text-transform:uppercase;
+      letter-spacing:.08em;margin-bottom:8px}
+    /* Alert rows */
+    .alert-row{display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center;
+      padding:10px;background:#f9f5f1;border-radius:10px}
+    .alert-fields{display:flex;flex-direction:column;gap:5px}
+    .alert-fields input{padding:7px 10px;border:1px solid #d0b08a;border-radius:7px;
+      font-size:.84rem;width:100%}
+    .alert-fields input:focus{outline:none;border-color:#8B4513}
+    input[type=checkbox]{width:19px;height:19px;accent-color:#8B4513;cursor:pointer;
+      margin-left:4px}
+    /* Maintenance rows */
+    .maint-row{display:flex;align-items:center;gap:8px;padding:9px 12px;
+      background:#f9f5f1;border-radius:10px;font-size:.88rem;color:#555}
+    .maint-lbl{flex:1}
+    .maint-val{font-weight:700;color:#8B4513;white-space:nowrap}
+    /* House params */
+    .param-row{display:flex;align-items:center;gap:8px}
+    .param-row label{font-size:.82rem;color:#555;white-space:nowrap}
+    .param-row input[type=number]{flex:1;padding:7px 10px;border:1px solid #d0b08a;
+      border-radius:7px;font-size:.9rem}
+    .param-row input:focus{outline:none;border-color:#8B4513}
+    .ins-wrap{display:flex;gap:6px;margin-top:2px}
+    .ins-btn{border:2px solid #d0b08a;background:#fff;border-radius:8px;padding:7px 14px;
+      font-size:.82rem;cursor:pointer;color:#666;transition:all .15s;font-weight:500}
+    .ins-btn.active{border-color:#8B4513;background:#8B4513;color:#fff;font-weight:700}
 
     /* ── Offline overlay ── */
     #offline-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);
@@ -119,9 +151,10 @@
     .offline-box p{font-size:.88rem;color:#555;margin-bottom:16px}
 
     /* ── Misc ── */
-    .section-title{font-size:.78rem;font-weight:600;color:#8B4513;text-transform:uppercase;
-      letter-spacing:.06em;margin-bottom:10px}
-    .divider{border:none;border-top:1px solid #f0e0d0;margin:4px 0}
+    .section-title{font-size:.75rem;font-weight:700;color:#8B4513;text-transform:uppercase;
+      letter-spacing:.07em;margin-bottom:12px}
+    .divider{border:none;border-top:1px solid #f0e0d0;margin:0}
+    .gap-col{display:flex;flex-direction:column;gap:8px}
   </style>
 </head>
 <body>
@@ -129,138 +162,196 @@
 
   <!-- ── Header ── -->
   <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 2px">
-    <div class="logo">🔥 WoodMood<span>Remote Control</span></div>
-    <div class="conn-badge" onclick="toggleConnPanel()">
-      <div class="dot" id="conn-dot"></div>
-      <span id="conn-label">Disconnected</span>
+    <div class="logo">WoodMood</div>
+    <div class="status-badge" onclick="toggleConnPanel()">
+      <div class="status-dot" id="status-dot"></div>
+      <span id="status-label">Disconnected</span>
     </div>
   </div>
 
-  <!-- ── Connection settings panel ── -->
+  <!-- ── Connection panel ── -->
   <div class="card" id="conn-card">
     <div class="section-title">Broker Connection</div>
-    <div id="conn-panel" class="open">
-      <input id="cfg-broker"   placeholder="Broker  e.g. abc123.s1.eu.hivemq.cloud" />
-      <input id="cfg-user"     placeholder="Username" />
-      <input id="cfg-pass"     placeholder="Password" type="password" />
-      <input id="cfg-serial"   placeholder="Device serial  e.g. JJQF9D" />
-      <div class="row-btns">
-        <button class="btn btn-brown" onclick="saveAndConnect()">Connect</button>
-        <button class="btn btn-gray btn-sm" onclick="clearCreds()">Clear saved</button>
-      </div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <input class="conn-input" id="cfg-broker" placeholder="Broker  e.g. abc123.s1.eu.hivemq.cloud"/>
+      <input class="conn-input" id="cfg-user"   placeholder="Username"/>
+      <input class="conn-input" id="cfg-pass"   placeholder="Password" type="password"/>
+      <input class="conn-input" id="cfg-serial" placeholder="Device serial  e.g. JJQF9D"/>
+      <button class="btn btn-brown btn-full" onclick="saveAndConnect()">Connect</button>
     </div>
+  </div>
+
+  <!-- ── System state ── -->
+  <div class="card" style="padding:12px">
+    <button class="sys-btn startup" id="sys-btn" onclick="sysButtonClick()">Startup</button>
   </div>
 
   <!-- ── Fault banner ── -->
   <div id="fault-banner">
-    <div class="fault-title">⚠️ FAULT DETECTED</div>
-    <div class="fault-msg" id="fault-msg-text">—</div>
-    <button class="btn btn-red btn-full" onclick="resolveFault()">Resolve Fault</button>
+    <div class="fault-title" id="fault-title">⚠️ FAULT DETECTED</div>
+    <div class="fault-steps">
+      <div class="fault-step"><span class="fault-step-num">1.</span><span>Take glove and poker</span></div>
+      <div class="fault-step"><span class="fault-step-num">2.</span><span>Open door with the button below</span></div>
+      <div class="fault-step"><span class="fault-step-num">3.</span><span>Push log into the fire or remove it</span></div>
+      <div class="fault-step"><span class="fault-step-num">4.</span><span>Close the cartridge door</span></div>
+      <div class="fault-step"><span class="fault-step-num">5.</span><span>Press Resolve Fault</span></div>
+    </div>
+    <button class="btn btn-green btn-full" id="fault-action-btn" onclick="faultActionClick()">Unlock door</button>
   </div>
 
   <!-- ── Temperature ── -->
   <div class="card-warm">
-    <div class="temp-row">
-      <div>
-        <div class="temp-big" id="stove-temp">—°</div>
-        <div class="temp-label">Stove temp</div>
-      </div>
-      <div class="temp-right">
-        <div class="temp-big" style="font-size:2rem" id="setpoint-val">—°</div>
-        <div class="temp-label">Setpoint</div>
-      </div>
+    <div class="room-row">
+      <span class="room-unit">Room °C</span>
+      <button class="adj-btn" onclick="adjustRoom(-1)">−</button>
+      <div id="room-val">20</div>
+      <button class="adj-btn" onclick="adjustRoom(+1)">+</button>
+      <span class="room-unit">18–26</span>
     </div>
-    <div class="thermostat-row">
-      <div class="t-label">Room °C</div>
-      <button class="btn btn-brown" onclick="adjustRoom(-1)">−</button>
-      <div id="room-val">—</div>
-      <button class="btn btn-brown" onclick="adjustRoom(+1)">+</button>
-      <div class="t-label">18–26</div>
+    <div class="temps-row">
+      <div class="temp-half">
+        <div class="temp-big" id="stove-temp">—°</div>
+        <div class="temp-small-label">Stove internal<br>temperature</div>
+      </div>
+      <div class="temp-half">
+        <div class="temp-big" id="setpoint-val">—°</div>
+        <div class="temp-small-label">Stove internal<br>target temperature</div>
+      </div>
     </div>
   </div>
 
-  <!-- ── Log cartridges ── -->
+  <!-- ── Log Cartridges ── -->
   <div class="card">
     <div class="section-title">Log Cartridges</div>
-    <div class="carts-row">
-      <div class="cart">
+    <div class="cart-grid">
+
+      <!-- Left -->
+      <div class="cart-col left">
         <div class="cart-title">Left</div>
         <div class="bars" id="bars-left"></div>
         <div class="cart-count" id="count-left">—</div>
-        <button class="btn btn-green btn-sm" style="width:100%" onclick="unlockDoor('l')">Unlock Left</button>
+        <div class="cart-btn-stack">
+          <button class="btn btn-green"  onclick="unlockDoor('l')">Unlock</button>
+          <button class="btn btn-orange" onclick="publish('cmd/rewind_l','1')">Rewind</button>
+          <button class="btn btn-brown"  onclick="updateLogCount('l')">Update log count</button>
+        </div>
       </div>
-      <div class="cart">
+
+      <!-- Time left -->
+      <div class="time-col">
+        <div class="time-label">Time<br>Left</div>
+        <div class="time-val" id="burn-time-val">—</div>
+        <div class="time-unit">hours</div>
+      </div>
+
+      <!-- Right -->
+      <div class="cart-col right">
         <div class="cart-title">Right</div>
         <div class="bars" id="bars-right"></div>
         <div class="cart-count" id="count-right">—</div>
-        <button class="btn btn-green btn-sm" style="width:100%" onclick="unlockDoor('r')">Unlock Right</button>
+        <div class="cart-btn-stack">
+          <button class="btn btn-green"  onclick="unlockDoor('r')">Unlock</button>
+          <button class="btn btn-orange" onclick="publish('cmd/rewind_r','1')">Rewind</button>
+          <button class="btn btn-brown"  onclick="updateLogCount('r')">Update log count</button>
+        </div>
       </div>
-    </div>
-  </div>
 
-  <!-- ── Status grid ── -->
-  <div class="card">
-    <div class="status-grid">
-      <div class="stat-box">
-        <div class="stat-val" id="sys-state-val">—</div>
-        <div class="stat-lbl">System</div>
-      </div>
-      <div class="stat-box">
-        <div class="stat-val" id="auto-insert-val">—</div>
-        <div class="stat-lbl">Auto Insert</div>
-      </div>
-    </div>
-    <div style="margin-top:10px;padding:10px;background:#f5f1ec;border-radius:10px">
-      <div class="hb-row">
-        <div class="hb-dot" id="hb-dot"></div>
-        <span id="hb-label">Waiting for heartbeat…</span>
-        <span style="margin-left:auto;font-size:.75rem;color:#aaa" id="hb-uptime"></span>
-      </div>
     </div>
   </div>
 
   <!-- ── Settings ── -->
   <div class="card">
     <div class="settings-toggle" onclick="toggleSettings()">
-      <span style="font-weight:600;color:#8B4513">Settings &amp; Controls</span>
+      <span style="font-weight:700;color:#8B4513">Settings</span>
       <span class="arrow" id="settings-arrow">▼</span>
     </div>
     <div class="settings-body" id="settings-body">
 
+      <!-- Maintenance alerts -->
       <div>
-        <div class="settings-section">Log Count Correction</div>
-        <div class="input-row">
-          <label>Left</label>
-          <input type="number" id="set-log-l" min="0" max="6" value="0"/>
-          <label>Right</label>
-          <input type="number" id="set-log-r" min="0" max="6" value="0"/>
-          <button class="btn btn-brown btn-sm" onclick="sendLogCounts()">Set</button>
+        <div class="settings-section">Maintenance Alerts</div>
+        <div class="gap-col">
+          <div class="alert-row">
+            <div class="alert-fields">
+              <input type="email" id="alert-email-1" placeholder="Email address"/>
+              <input type="tel"   id="alert-phone-1" placeholder="Phone  e.g. +1 234 567 890"/>
+            </div>
+            <input type="checkbox" id="alert-en-1" checked/>
+          </div>
+          <div class="alert-row">
+            <div class="alert-fields">
+              <input type="email" id="alert-email-2" placeholder="Email address"/>
+              <input type="tel"   id="alert-phone-2" placeholder="Phone  e.g. +1 234 567 890"/>
+            </div>
+            <input type="checkbox" id="alert-en-2"/>
+          </div>
+          <div class="alert-row">
+            <div class="alert-fields">
+              <input type="email" id="alert-email-3" placeholder="Email address"/>
+              <input type="tel"   id="alert-phone-3" placeholder="Phone  e.g. +1 234 567 890"/>
+            </div>
+            <input type="checkbox" id="alert-en-3"/>
+          </div>
+          <button class="btn btn-brown btn-sm btn-full" onclick="saveAlerts()">Save alerts</button>
         </div>
       </div>
 
-      <hr class="divider"/>
+      <div class="divider"></div>
 
+      <!-- Maintenance reminders -->
       <div>
-        <div class="settings-section">Rewind Cartridge</div>
-        <div class="row-btns">
-          <button class="btn btn-orange btn-sm" onclick="publish('cmd/rewind_l','1')">Rewind Left</button>
-          <button class="btn btn-orange btn-sm" onclick="publish('cmd/rewind_r','1')">Rewind Right</button>
+        <div class="settings-section">Maintenance Reminders</div>
+        <div class="gap-col">
+          <div class="maint-row">
+            <span class="maint-lbl">Replace Joint</span>
+            <span class="maint-val" id="joint-days">— days</span>
+            <button class="btn btn-brown btn-sm" style="flex:none" onclick="replaceJoint()">Check</button>
+          </div>
+          <div class="maint-row">
+            <span class="maint-lbl">Ramonage</span>
+            <span class="maint-val" id="ramon-days">— days since last</span>
+          </div>
+          <div class="maint-row">
+            <span class="maint-lbl">Replace door seal</span>
+            <span class="maint-val" id="seal-days">— days</span>
+          </div>
         </div>
       </div>
 
-      <hr class="divider"/>
+      <div class="divider"></div>
 
+      <!-- House parameters -->
       <div>
-        <div class="settings-section">Fault</div>
-        <button class="btn btn-red btn-full" onclick="resolveFault()">Resolve Fault</button>
+        <div class="settings-section">House Parameters</div>
+        <div class="gap-col">
+          <div class="param-row">
+            <label>Size</label>
+            <input type="number" id="house-size" placeholder="Volume" min="0"/>
+            <label>m³</label>
+          </div>
+          <div>
+            <div style="font-size:.82rem;color:#777;margin-bottom:7px">Insulation</div>
+            <div class="ins-wrap">
+              <button class="ins-btn" id="ins-poor"    onclick="setInsulation('poor')">Poor</button>
+              <button class="ins-btn" id="ins-average" onclick="setInsulation('average')">Average</button>
+              <button class="ins-btn" id="ins-good"    onclick="setInsulation('good')">Good</button>
+            </div>
+          </div>
+          <button class="btn btn-brown btn-sm btn-full" onclick="saveHouseParams()">Save house parameters</button>
+        </div>
       </div>
+
+      <div class="divider"></div>
+
+      <!-- Disconnect -->
+      <button class="btn btn-gray btn-full" onclick="disconnect()">Disconnect</button>
 
     </div>
   </div>
 
   <!-- ── Footer ── -->
   <div style="text-align:center;font-size:.72rem;color:rgba(255,255,255,.5);padding-bottom:8px">
-    WoodMood Remote · <span id="footer-serial">—</span>
+    WoodMood · <span id="footer-serial">—</span>
   </div>
 
 </div>
@@ -276,36 +367,51 @@
 
 <script>
 // ============================================================
-// CONFIG  (saved to / loaded from localStorage)
+// STATE
 // ============================================================
-const LS = 'woodmood_cfg';
-let cfg = JSON.parse(localStorage.getItem(LS) || '{}');
+const LS        = 'woodmood_cfg';
+const LS_ALERTS = 'woodmood_alerts';
+const LS_HOUSE  = 'woodmood_house';
 
-let client      = null;
-let prefix      = '';          // "WoodMood" + serial
-let roomTemp    = 20;          // local room-temp tracking
-let lastHbTime  = 0;
-let hbTimer     = null;
-let settingsOpen = false;
+let cfg              = JSON.parse(localStorage.getItem(LS) || '{}');
+let client           = null;
+let prefix           = '';
+let roomTemp         = 20;
+let lastHbTime       = 0;
+let hbTimer          = null;
+let settingsOpen     = false;
+let systemState      = 'startup';   // startup | auto | cooldown | fault
+let faultSide        = null;        // 'l' | 'r'
+let faultActionPhase = 'unlock';    // 'unlock' | 'resolve'
+let faultDoorTimer   = null;
+let insulation       = null;
 
 // ============================================================
 // INIT
 // ============================================================
 window.addEventListener('load', () => {
+  loadSettings();
   if (cfg.broker && cfg.user && cfg.pass && cfg.serial) {
     fillForm();
     document.getElementById('conn-card').style.display = 'none';
     connect();
   }
-  renderBars('left', 0);
+  renderBars('left',  0);
   renderBars('right', 0);
+  document.getElementById('room-val').textContent = roomTemp;
 });
 
 function fillForm() {
-  document.getElementById('cfg-broker').value  = cfg.broker  || '';
-  document.getElementById('cfg-user').value    = cfg.user    || '';
-  document.getElementById('cfg-pass').value    = cfg.pass    || '';
-  document.getElementById('cfg-serial').value  = cfg.serial  || '';
+  document.getElementById('cfg-broker').value = cfg.broker || '';
+  document.getElementById('cfg-user').value   = cfg.user   || '';
+  document.getElementById('cfg-pass').value   = cfg.pass   || '';
+  document.getElementById('cfg-serial').value = cfg.serial || '';
+}
+
+function toggleConnPanel() {
+  const card = document.getElementById('conn-card');
+  card.style.display = card.style.display === 'none' ? '' : 'none';
+  if (card.style.display !== 'none') fillForm();
 }
 
 // ============================================================
@@ -322,27 +428,10 @@ function saveAndConnect() {
   connect();
 }
 
-function clearCreds() {
-  localStorage.removeItem(LS);
-  cfg = {};
-  fillForm();
-}
-
-function toggleConnPanel() {
-  const card = document.getElementById('conn-card');
-  if (card.style.display === 'none') {
-    fillForm();
-    card.style.display = '';
-  } else {
-    card.style.display = 'none';
-  }
-}
-
 function connect() {
   prefix = 'WoodMood' + cfg.serial;
   document.getElementById('footer-serial').textContent = prefix;
-
-  setConnState('connecting');
+  setDotState('connecting');
 
   if (client) { try { client.end(true); } catch(e){} }
 
@@ -353,20 +442,26 @@ function connect() {
     keepalive:       60,
     reconnectPeriod: 5000,
     connectTimeout:  10000,
-    rejectUnauthorized: false   // mirrors setInsecure() on the ESP32 side
+    rejectUnauthorized: false
   });
 
   client.on('connect', () => {
-    setConnState('ok');
+    setDotState('connected');   // orange — waiting for heartbeat
     document.getElementById('offline-overlay').classList.remove('show');
     client.subscribe(prefix + '/status/#');
   });
 
-  client.on('message', onMessage);
+  client.on('message',   onMessage);
+  client.on('offline',   () => { setDotState('disconnected'); showOffline(); });
+  client.on('error',     () => { setDotState('disconnected'); });
+  client.on('reconnect', () => { setDotState('connecting');   });
+}
 
-  client.on('offline',     () => { setConnState('disconnected'); showOffline(); });
-  client.on('error',       () => { setConnState('disconnected'); });
-  client.on('reconnect',   () => { setConnState('connecting');   });
+function disconnect() {
+  if (client) { try { client.end(true); } catch(e){} client = null; }
+  setDotState('disconnected');
+  document.getElementById('conn-card').style.display = '';
+  fillForm();
 }
 
 function reconnect() {
@@ -374,15 +469,17 @@ function reconnect() {
   connect();
 }
 
-function setConnState(s) {
-  const dot   = document.getElementById('conn-dot');
-  const label = document.getElementById('conn-label');
-  dot.className = 'dot' + (s==='ok' ? ' ok' : s==='connecting' ? ' connecting' : '');
-  label.textContent = s==='ok' ? 'Connected' : s==='connecting' ? 'Connecting…' : 'Disconnected';
+function setDotState(s) {
+  const dot   = document.getElementById('status-dot');
+  const label = document.getElementById('status-label');
+  dot.className = 'status-dot';
+  if      (s === 'connecting') { dot.classList.add('connecting'); label.textContent = 'Connecting…';  }
+  else if (s === 'connected')  { dot.classList.add('connected');  label.textContent = 'Connected';    }
+  else if (s === 'alive')      { dot.classList.add('alive');      label.textContent = 'Connected';    }
+  else                         {                                  label.textContent = 'Disconnected'; }
 }
 
 function showOffline() {
-  // Only show overlay after being connected at least once
   if (lastHbTime > 0) document.getElementById('offline-overlay').classList.add('show');
 }
 
@@ -393,99 +490,121 @@ function onMessage(topic, payloadBuf) {
   const payload = payloadBuf.toString();
   const sub     = topic.replace(prefix + '/', '');
 
-  // Auto-ACK heartbeat immediately — keeps auto-insertion gate open
   if (sub === 'status/heartbeat') {
     publish('cmd/heartbeat_ack', '1');
     lastHbTime = Date.now();
-    const dot   = document.getElementById('hb-dot');
-    const label = document.getElementById('hb-label');
-    dot.className = 'hb-dot ok';
-    label.textContent = 'Heartbeat active — auto-insertion enabled';
+    setDotState('alive');
     clearTimeout(hbTimer);
-    hbTimer = setTimeout(() => {
-      dot.className = 'hb-dot';
-      label.textContent = 'Heartbeat lost — auto-insertion suspended';
-    }, 31000);  // slightly longer than the 30 s ESP32 timeout
+    hbTimer = setTimeout(() => setDotState('connected'), 31000);
     return;
   }
 
-  if (sub === 'status/full') {
-    try { applyFull(JSON.parse(payload)); } catch(e) {}
-    return;
-  }
-
-  if (sub === 'status/fault') {
-    setFault(payload === '1', document.getElementById('fault-msg-text').textContent);
-    return;
-  }
-
-  if (sub === 'status/fault_msg') {
-    document.getElementById('fault-msg-text').textContent = payload || 'Unknown fault';
-    return;
-  }
+  if (sub === 'status/full')       { try { applyFull(JSON.parse(payload)); } catch(e){} return; }
+  if (sub === 'status/fault')      { setFault(payload === '1'); return; }
+  if (sub === 'status/fault_msg')  { setFaultMsg(payload);      return; }
+  if (sub === 'status/fault_side') { faultSide = payload;       return; }
 
   if (sub === 'status/temperature') {
-    document.getElementById('stove-temp').textContent = payload + '°';
-    return;
+    document.getElementById('stove-temp').textContent = payload + '°'; return;
   }
-
   if (sub === 'status/log_level_l') {
-    renderBars('left',  parseInt(payload) || 0);
-    document.getElementById('count-left').textContent  = payload + ' logs';
-    document.getElementById('set-log-l').value = payload;
-    return;
+    renderBars('left',  parseInt(payload)||0);
+    document.getElementById('count-left').textContent = payload + ' logs'; return;
   }
-
   if (sub === 'status/log_level_r') {
-    renderBars('right', parseInt(payload) || 0);
-    document.getElementById('count-right').textContent = payload + ' logs';
-    document.getElementById('set-log-r').value = payload;
-    return;
+    renderBars('right', parseInt(payload)||0);
+    document.getElementById('count-right').textContent = payload + ' logs'; return;
   }
+  if (sub === 'status/burn_time') {
+    const h = parseFloat(payload);
+    document.getElementById('burn-time-val').textContent = isNaN(h) ? '—' : h.toFixed(1); return;
+  }
+  if (sub === 'status/system_state') { applySystemState(payload); return; }
+  if (sub === 'status/maint_joint')  { document.getElementById('joint-days').textContent = payload + ' days'; return; }
+  if (sub === 'status/maint_ramon')  { document.getElementById('ramon-days').textContent = payload + ' days since last'; return; }
+  if (sub === 'status/maint_seal')   { document.getElementById('seal-days').textContent  = payload + ' days'; return; }
 }
 
 // ============================================================
-// APPLY FULL STATUS JSON
+// FULL STATUS JSON
 // ============================================================
 function applyFull(d) {
-  if (d.stove_temp !== undefined)
-    document.getElementById('stove-temp').textContent  = d.stove_temp + '°';
-
-  if (d.setpoint !== undefined)
-    document.getElementById('setpoint-val').textContent = d.setpoint + '°';
-
-  if (d.log_l !== undefined) { renderBars('left',  d.log_l); document.getElementById('count-left').textContent  = d.log_l + ' logs'; }
-  if (d.log_r !== undefined) { renderBars('right', d.log_r); document.getElementById('count-right').textContent = d.log_r + ' logs'; }
-
-  if (d.fault !== undefined) setFault(d.fault);
-
-  const sysEl = document.getElementById('sys-state-val');
-  if (d.system_active !== undefined) {
-    sysEl.textContent  = d.system_active ? 'Active' : 'Standby';
-    sysEl.className    = 'stat-val ' + (d.system_active ? 'good' : 'warn');
+  if (d.stove_temp     !== undefined) document.getElementById('stove-temp').textContent    = d.stove_temp + '°';
+  if (d.setpoint       !== undefined) document.getElementById('setpoint-val').textContent  = d.setpoint + '°';
+  if (d.log_l          !== undefined) { renderBars('left',  d.log_l); document.getElementById('count-left').textContent  = d.log_l + ' logs'; }
+  if (d.log_r          !== undefined) { renderBars('right', d.log_r); document.getElementById('count-right').textContent = d.log_r + ' logs'; }
+  if (d.fault          !== undefined) setFault(d.fault);
+  if (d.fault_side     !== undefined) faultSide = d.fault_side;
+  if (d.system_state   !== undefined) applySystemState(d.system_state);
+  if (d.burn_time      !== undefined) {
+    const h = parseFloat(d.burn_time);
+    document.getElementById('burn-time-val').textContent = isNaN(h) ? '—' : h.toFixed(1);
   }
-
-  const aiEl = document.getElementById('auto-insert-val');
-  if (d.auto_insert !== undefined) {
-    aiEl.textContent = d.auto_insert ? 'Enabled' : 'Disabled';
-    aiEl.className   = 'stat-val ' + (d.auto_insert ? 'good' : 'warn');
-  }
-
   if (d.uptime !== undefined) {
     const h = Math.floor(d.uptime/3600), m = Math.floor((d.uptime%3600)/60);
-    document.getElementById('hb-uptime').textContent = `up ${h}h ${m}m`;
+    document.getElementById('footer-serial').textContent = prefix + '  ·  up ' + h + 'h ' + m + 'm';
   }
+  if (d.maint_joint !== undefined) document.getElementById('joint-days').textContent = d.maint_joint + ' days';
+  if (d.maint_ramon !== undefined) document.getElementById('ramon-days').textContent = d.maint_ramon + ' days since last';
+  if (d.maint_seal  !== undefined) document.getElementById('seal-days').textContent  = d.maint_seal  + ' days';
+}
+
+// ============================================================
+// SYSTEM STATE
+// ============================================================
+function applySystemState(state) {
+  systemState = state;
+  const btn    = document.getElementById('sys-btn');
+  const labels = { startup:'Startup', auto:'Automatic Operation', cooldown:'Cooldown', fault:'Fault Condition' };
+  btn.textContent = labels[state] || state;
+  btn.className   = 'sys-btn ' + (state || 'startup');
+}
+
+function sysButtonClick() {
+  if (systemState !== 'auto') return;
+  if (!confirm('Switch to cooldown mode?')) return;
+  publish('cmd/cooldown', '1');
 }
 
 // ============================================================
 // FAULT
 // ============================================================
-function setFault(active, msg) {
+function setFault(active) {
   const banner = document.getElementById('fault-banner');
   if (active || active === '1' || active === true) {
     banner.classList.add('show');
+    faultActionPhase = 'unlock';
+    const btn = document.getElementById('fault-action-btn');
+    btn.textContent  = 'Unlock door';
+    btn.className    = 'btn btn-green btn-full';
+    clearTimeout(faultDoorTimer);
   } else {
     banner.classList.remove('show');
+    clearTimeout(faultDoorTimer);
+  }
+}
+
+function setFaultMsg(msg) {
+  const lower = msg.toLowerCase();
+  const side  = lower.includes('right') ? 'Right' : lower.includes('left') ? 'Left' : null;
+  document.getElementById('fault-title').textContent =
+    side ? `⚠️ Fault — log stuck in trapdoor (${side})` : '⚠️ FAULT DETECTED';
+}
+
+function faultActionClick() {
+  if (faultActionPhase === 'unlock') {
+    publish('cmd/door_' + (faultSide || 'l'), '1');
+    // After 10 s the door has been open long enough → switch to resolve
+    faultDoorTimer = setTimeout(() => {
+      faultActionPhase = 'resolve';
+      const btn = document.getElementById('fault-action-btn');
+      btn.textContent = 'Resolve Fault';
+      btn.className   = 'btn btn-red btn-full';
+    }, 10000);
+  } else {
+    if (!confirm('Resolve fault and attempt motor recovery?')) return;
+    publish('cmd/resolve_fault', '1');
+    setFault(false);
   }
 }
 
@@ -512,8 +631,7 @@ function publish(subtopic, payload) {
 }
 
 function adjustRoom(delta) {
-  const prev = (roomTemp === null || isNaN(roomTemp)) ? 20 : roomTemp;
-  roomTemp = Math.min(26, Math.max(18, prev + delta));
+  roomTemp = Math.min(26, Math.max(18, (isNaN(roomTemp) ? 20 : roomTemp) + delta));
   document.getElementById('room-val').textContent = roomTemp;
   publish('cmd/room_temp', roomTemp);
 }
@@ -523,16 +641,87 @@ function unlockDoor(side) {
   publish('cmd/door_' + side, '1');
 }
 
-function resolveFault() {
-  if (!confirm('Resolve fault and attempt motor recovery?')) return;
-  publish('cmd/resolve_fault', '1');
+function updateLogCount(side) {
+  const id  = side === 'l' ? 'count-left' : 'count-right';
+  const cur = document.getElementById(id).textContent.replace(' logs','').trim();
+  const val = prompt('Log count for ' + (side==='l'?'Left':'Right') + ' cartridge (0–6):', cur === '—' ? '0' : cur);
+  if (val === null) return;
+  const n = Math.min(6, Math.max(0, parseInt(val) || 0));
+  publish('cmd/log_level_' + side, n);
+  renderBars(side === 'l' ? 'left' : 'right', n);
+  document.getElementById(id).textContent = n + ' logs';
 }
 
-function sendLogCounts() {
-  const l = parseInt(document.getElementById('set-log-l').value) || 0;
-  const r = parseInt(document.getElementById('set-log-r').value) || 0;
-  publish('cmd/log_level_l', l);
-  publish('cmd/log_level_r', r);
+// ============================================================
+// SETTINGS — ALERTS
+// ============================================================
+function loadSettings() {
+  const alerts = JSON.parse(localStorage.getItem(LS_ALERTS) || '{}');
+  for (let i = 1; i <= 3; i++) {
+    if (alerts['email'+i] !== undefined) document.getElementById('alert-email-'+i).value   = alerts['email'+i];
+    if (alerts['phone'+i] !== undefined) document.getElementById('alert-phone-'+i).value   = alerts['phone'+i];
+    if (alerts['en'+i]    !== undefined) document.getElementById('alert-en-'+i).checked     = alerts['en'+i];
+  }
+  const house = JSON.parse(localStorage.getItem(LS_HOUSE) || '{}');
+  if (house.size)       document.getElementById('house-size').value = house.size;
+  if (house.insulation) setInsulation(house.insulation, false);
+}
+
+function saveAlerts() {
+  const alerts = {};
+  let anyEnabled = false;
+  for (let i = 1; i <= 3; i++) {
+    alerts['email'+i] = document.getElementById('alert-email-'+i).value.trim();
+    alerts['phone'+i] = document.getElementById('alert-phone-'+i).value.trim();
+    alerts['en'+i]    = document.getElementById('alert-en-'+i).checked;
+    if (alerts['en'+i]) anyEnabled = true;
+  }
+  if (!anyEnabled) { alert('At least one alert must be enabled.'); return; }
+  localStorage.setItem(LS_ALERTS, JSON.stringify(alerts));
+  publish('cmd/alert_cfg', JSON.stringify(alerts));
+  alert('Alerts saved.');
+}
+
+// ============================================================
+// SETTINGS — MAINTENANCE
+// ============================================================
+function replaceJoint() {
+  const temp = parseFloat(document.getElementById('stove-temp').textContent);
+  if (!isNaN(temp) && temp > 100) {
+    alert('Stove is above 100°. Let it cool down before replacing the joint.');
+    return;
+  }
+  if (!confirm('Open trapdoor for joint replacement (5 seconds)?')) return;
+  const side = faultSide || 'l';
+  publish('cmd/door_' + side, '1');
+  setTimeout(() => publish('cmd/door_' + side, '0'), 5000);
+}
+
+// ============================================================
+// SETTINGS — HOUSE PARAMS
+// ============================================================
+function setInsulation(val, save = true) {
+  insulation = val;
+  ['poor','average','good'].forEach(v =>
+    document.getElementById('ins-'+v).classList.toggle('active', v === val)
+  );
+  if (save) saveHouseParamsLocal();
+}
+
+function saveHouseParamsLocal() {
+  localStorage.setItem(LS_HOUSE, JSON.stringify({
+    size: document.getElementById('house-size').value,
+    insulation
+  }));
+}
+
+function saveHouseParams() {
+  saveHouseParamsLocal();
+  publish('cmd/house_params', JSON.stringify({
+    size: document.getElementById('house-size').value,
+    insulation
+  }));
+  alert('House parameters saved.');
 }
 
 // ============================================================
@@ -540,8 +729,8 @@ function sendLogCounts() {
 // ============================================================
 function toggleSettings() {
   settingsOpen = !settingsOpen;
-  document.getElementById('settings-body').className = 'settings-body' + (settingsOpen ? ' open' : '');
-  document.getElementById('settings-arrow').className = 'arrow' + (settingsOpen ? ' open' : '');
+  document.getElementById('settings-body').classList.toggle('open', settingsOpen);
+  document.getElementById('settings-arrow').classList.toggle('open', settingsOpen);
 }
 </script>
 </body>
