@@ -237,6 +237,10 @@
         <div class="temp-big" id="setpoint-val">—°</div>
         <div class="temp-small-label">Stove internal<br>target temperature</div>
       </div>
+      <div class="temp-half">
+        <div class="temp-big" id="ble-room-temp" style="opacity:.5">—°</div>
+        <div class="temp-small-label" id="ble-room-label">Room (no sensor)</div>
+      </div>
     </div>
   </div>
 
@@ -437,6 +441,8 @@ let inCooldown         = false;  // user manually entered cooldown (optimistic)
 let remoteStateReceived= false;  // true once firmware sends status/system_state
 let logL               = 0;      // current left log count
 let logR               = 0;      // current right log count
+let bleRoomTemp        = null;   // BLE room sensor temperature (°C), null = unavailable
+let bleRoomTempOk      = false;  // true when BLE sensor has a valid reading
 
 // ============================================================
 // INIT
@@ -561,6 +567,12 @@ function onMessage(topic, payloadBuf) {
     document.getElementById('stove-temp').textContent = payload + '°';
     updateSystemState(); return;
   }
+  if (sub === 'status/room_temp') {
+    const val = parseFloat(payload);
+    bleRoomTempOk = !isNaN(val) && val > -998;
+    bleRoomTemp   = bleRoomTempOk ? val : null;
+    updateBleRoomTemp(); return;
+  }
   if (sub === 'status/log_level_l') {
     logL = parseInt(payload) || 0;
     renderBars('left', logL);
@@ -602,6 +614,12 @@ function applyFull(d) {
     setpointVal = parseFloat(d.setpoint);
     document.getElementById('setpoint-val').textContent = d.setpoint + '°';
   }
+  if (d.room_temp !== undefined) {
+    const val = parseFloat(d.room_temp);
+    bleRoomTempOk = (d.room_temp_ok !== undefined) ? !!d.room_temp_ok : (!isNaN(val) && val > -998);
+    bleRoomTemp   = bleRoomTempOk ? val : null;
+    updateBleRoomTemp();
+  }
   if (d.log_l !== undefined) {
     logL = parseInt(d.log_l) || 0;
     renderBars('left',  logL);
@@ -627,6 +645,24 @@ function applyFull(d) {
 
   calcBurnTime();
   updateSystemState();
+}
+
+// ============================================================
+// BLE ROOM TEMPERATURE
+// ============================================================
+function updateBleRoomTemp() {
+  const el  = document.getElementById('ble-room-temp');
+  const lbl = document.getElementById('ble-room-label');
+  if (!el) return;
+  if (bleRoomTempOk && bleRoomTemp !== null) {
+    el.textContent   = bleRoomTemp.toFixed(1) + '°';
+    lbl.textContent  = 'Room temperature';
+    el.style.opacity = '1';
+  } else {
+    el.textContent   = '—°';
+    lbl.textContent  = 'Room (no sensor)';
+    el.style.opacity = '0.5';
+  }
 }
 
 // ============================================================
