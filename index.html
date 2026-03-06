@@ -72,20 +72,24 @@
     .row-btns  {display:flex;gap:8px}
 
     /* ── Temperature card ── */
-    .room-row{display:flex;align-items:center;justify-content:center;gap:12px;
-      background:rgba(0,0,0,.12);border-radius:12px;padding:10px;margin-bottom:14px}
-    .room-row .adj-btn{width:44px;height:44px;font-size:1.3rem;padding:0;border-radius:10px;
+    .adj-btn{width:44px;height:44px;font-size:1.3rem;padding:0;border-radius:10px;
       border:none;background:#8B4513;color:#fff;cursor:pointer;flex-shrink:0;
       font-weight:700;transition:filter .15s}
-    .room-row .adj-btn:hover{filter:brightness(1.1)}
-    #room-val{font-size:1.5rem;font-weight:700;min-width:52px;text-align:center;color:#fff}
-    .room-unit{font-size:.78rem;opacity:.75}
-    .temps-row{display:flex}
-    .temp-half{flex:1;text-align:center;padding:8px 6px}
-    .temp-half+.temp-half{border-left:1px solid rgba(255,255,255,.25)}
+    .adj-btn:hover{filter:brightness(1.1)}
+    /* Main pair — current room temp + wanted temp */
+    .main-temps-row{display:flex;margin-bottom:10px}
+    .main-temp-half{flex:1;display:flex;flex-direction:column;align-items:center;
+      justify-content:center;padding:8px 6px}
+    .main-temp-half+.main-temp-half{border-left:1px solid rgba(255,255,255,.25)}
+    .wanted-controls{display:flex;align-items:center;gap:10px}
+    #room-val{font-size:2.6rem;font-weight:700;line-height:1;min-width:70px;text-align:center}
     .temp-big{font-size:2.6rem;font-weight:700;line-height:1}
-    .temp-small-label{font-size:.65rem;opacity:.65;margin-top:5px;line-height:1.35;
+    .temp-small-label{font-size:.65rem;opacity:.65;margin-top:6px;line-height:1.35;
       text-transform:uppercase;letter-spacing:.04em}
+    /* Stove internals — de-emphasised technical row */
+    .stove-tech-row{display:flex;align-items:center;justify-content:center;gap:6px;
+      border-top:1px solid rgba(255,255,255,.18);padding-top:9px;
+      font-size:.75rem;opacity:.5;letter-spacing:.02em}
 
     /* ── Log cartridges ── */
     .cart-grid{display:grid;grid-template-columns:1fr 56px 1fr;gap:0;align-items:start}
@@ -221,26 +225,26 @@
 
   <!-- ── Temperature ── -->
   <div class="card-warm">
-    <div class="room-row">
-      <span class="room-unit">Room °C</span>
-      <button class="adj-btn" onclick="adjustRoom(-1)">−</button>
-      <div id="room-val">20</div>
-      <button class="adj-btn" onclick="adjustRoom(+1)">+</button>
-      <span class="room-unit">18–26</span>
-    </div>
-    <div class="temps-row">
-      <div class="temp-half">
-        <div class="temp-big" id="stove-temp">—°</div>
-        <div class="temp-small-label">Stove internal<br>temperature</div>
-      </div>
-      <div class="temp-half">
-        <div class="temp-big" id="setpoint-val">—°</div>
-        <div class="temp-small-label">Stove internal<br>target temperature</div>
-      </div>
-      <div class="temp-half">
+    <!-- Main: current room temp (BLE) + wanted room temp -->
+    <div class="main-temps-row">
+      <div class="main-temp-half">
         <div class="temp-big" id="ble-room-temp" style="opacity:.5">—°</div>
-        <div class="temp-small-label" id="ble-room-label">Room (no sensor)</div>
+        <div class="temp-small-label" id="ble-room-label">Current temperature</div>
       </div>
+      <div class="main-temp-half">
+        <div class="wanted-controls">
+          <button class="adj-btn" onclick="adjustRoom(-1)">−</button>
+          <div id="room-val">20°</div>
+          <button class="adj-btn" onclick="adjustRoom(+1)">+</button>
+        </div>
+        <div class="temp-small-label">Wanted temperature</div>
+      </div>
+    </div>
+    <!-- Secondary: stove internals (de-emphasised) -->
+    <div class="stove-tech-row">
+      <span>Stove <span id="stove-temp">—°</span></span>
+      <span style="opacity:.5">·</span>
+      <span>Setpoint <span id="setpoint-val">—°</span></span>
     </div>
   </div>
 
@@ -456,7 +460,7 @@ window.addEventListener('load', () => {
   }
   renderBars('left',  0);
   renderBars('right', 0);
-  document.getElementById('room-val').textContent = roomTemp;
+  document.getElementById('room-val').textContent = roomTemp + '°';
 });
 
 function fillForm() {
@@ -794,7 +798,7 @@ function publish(subtopic, payload) {
 
 function adjustRoom(delta) {
   roomTemp = Math.min(26, Math.max(18, (isNaN(roomTemp) ? 20 : roomTemp) + delta));
-  document.getElementById('room-val').textContent = roomTemp;
+  document.getElementById('room-val').textContent = roomTemp + '°';
   publish('cmd/room_temp', roomTemp);
 }
 
