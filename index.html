@@ -183,6 +183,9 @@
     .side-opt{flex:1;text-align:center;padding:9px 6px;border-radius:8px;font-weight:700;
       font-size:.9rem;cursor:pointer;transition:background .2s,color .2s;color:#8B4513;user-select:none}
     .side-opt.active{background:#8B4513;color:#fff}
+    /* Small badge shown next to section headers that use active side */
+    .side-badge{display:inline-block;background:#8B4513;color:#fff;border-radius:4px;
+      font-size:.6rem;padding:1px 7px;margin-left:7px;vertical-align:middle;letter-spacing:.03em}
     .gap-col{display:flex;flex-direction:column;gap:8px}
 
     /* ── Toast ── */
@@ -435,7 +438,10 @@
           <div class="side-opt active" id="side-opt-l" onclick="selectSide('l')">◀ LEFT</div>
           <div class="side-opt"        id="side-opt-r" onclick="selectSide('r')">RIGHT ▶</div>
         </div>
-        <p style="font-size:.72rem;color:#aaa;margin-top:6px;text-align:center">Applies to insertion and door/rewind operations</p>
+        <div class="row-btns" style="margin-top:10px">
+          <button class="btn btn-green"  onclick="techUnlockDoor()">🔓 Unlock Door</button>
+          <button class="btn btn-orange" onclick="techRewind()">↺ Rewind</button>
+        </div>
       </div>
 
       <hr class="divider">
@@ -507,7 +513,7 @@
 
       <!-- MANUAL MOTOR CONTROL -->
       <div>
-        <div class="tech-sec">Manual Motor Control</div>
+        <div class="tech-sec">Manual Motor Control<span id="motor-side-lbl" class="side-badge">◀ L</span></div>
         <div class="tech-field-lbl">Steps</div>
         <input id="motor-steps" class="tech-input" type="number" value="200" min="1" max="9999">
         <div class="row-btns" style="margin-top:10px;margin-bottom:8px">
@@ -524,14 +530,14 @@
 
       <!-- MANUAL PISTON CONTROL -->
       <div>
-        <div class="tech-sec">Manual Piston Control</div>
+        <div class="tech-sec">Manual Piston Control<span id="piston-side-lbl" class="side-badge">◀ L</span></div>
         <div class="row-btns" style="margin-bottom:8px">
-          <button class="btn btn-green"  onclick="publish('cmd/piston_extend','1')">↑ Extend</button>
-          <button class="btn btn-orange" onclick="publish('cmd/piston_retract','1')">↓ Retract</button>
+          <button class="btn btn-green"  onclick="techPiston('extend')">↑ Extend</button>
+          <button class="btn btn-orange" onclick="techPiston('retract')">↓ Retract</button>
         </div>
         <div class="row-btns">
-          <button class="btn btn-gray" onclick="publish('cmd/piston_stop','1')">⏹ Stop</button>
-          <button class="btn btn-gray" onclick="publish('cmd/piston_tare','1')">⊕ Tare</button>
+          <button class="btn btn-gray" onclick="techPiston('stop')">⏹ Stop</button>
+          <button class="btn btn-gray" onclick="techPiston('tare')">⊕ Tare</button>
         </div>
       </div>
 
@@ -1009,6 +1015,22 @@ function selectSide(s) {
   techSide = s;
   document.getElementById('side-opt-l').classList.toggle('active', s === 'l');
   document.getElementById('side-opt-r').classList.toggle('active', s === 'r');
+  // Update side badges on Motor and Piston section headers
+  const lbl = s === 'l' ? '◀ L' : 'R ▶';
+  ['motor-side-lbl', 'piston-side-lbl'].forEach(function(id) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = lbl;
+  });
+}
+
+function techUnlockDoor() {
+  publish('cmd/door_' + techSide, '1');
+  showToast('Unlocking ' + (techSide === 'l' ? 'Left' : 'Right') + ' door…');
+}
+
+function techRewind() {
+  publish('cmd/rewind_' + techSide, '1');
+  showToast('Rewinding ' + (techSide === 'l' ? 'Left' : 'Right') + ' cartridge…');
 }
 
 function toggleTechMode() {
@@ -1075,8 +1097,18 @@ function setAutoInsertEn(enabled) {
 
 function techMotor(dir) {
   const steps = parseInt(document.getElementById('motor-steps').value) || 200;
-  publish('cmd/motor_' + dir, String(steps));
-  showToast('Motor ' + dir + ' — ' + steps + ' steps');
+  // Payload format: "<side>:<steps>"  e.g. "l:200"
+  publish('cmd/motor_' + dir, techSide + ':' + String(steps));
+  const sideName = techSide === 'l' ? 'Left' : 'Right';
+  showToast('Motor ' + dir + ' — ' + steps + ' steps (' + sideName + ')');
+}
+
+function techPiston(action) {
+  // Payload: techSide — "l" or "r" — so firmware knows which side to operate
+  publish('cmd/piston_' + action, techSide);
+  const labels = { extend:'Extend', retract:'Retract', stop:'Stop', tare:'Tare' };
+  const sideName = techSide === 'l' ? 'Left' : 'Right';
+  showToast('Piston ' + (labels[action] || action) + ' — ' + sideName);
 }
 
 function techInsert() {
