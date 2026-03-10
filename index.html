@@ -159,6 +159,11 @@
     .section-title{font-size:.75rem;font-weight:700;color:#8B4513;text-transform:uppercase;
       letter-spacing:.07em;margin-bottom:12px}
     .divider{border:none;border-top:1px solid #f0e0d0;margin:0}
+
+    /* ── Technical Mode ── */
+    .tech-steps{width:90px;padding:8px;border:1px solid #d0b08a;border-radius:8px;
+      font-size:.9rem;text-align:center}
+    .tech-steps:focus{outline:none;border-color:#8B4513}
     .gap-col{display:flex;flex-direction:column;gap:8px}
 
     /* ── Toast ── */
@@ -393,6 +398,54 @@
       <span class="heap-val" id="heap-free-val">—</span>
       <span class="heap-lbl">·  min</span>
       <span class="heap-val" id="heap-min-val">—</span>
+    </div>
+  </div>
+
+  <!-- ── Technical Mode ── -->
+  <div class="card">
+    <div class="settings-toggle" onclick="toggleTechMode()">
+      <span style="font-weight:700;color:#8B4513">⚙ Technical Mode</span>
+      <span class="arrow" id="tech-arrow">▼</span>
+    </div>
+    <div class="settings-body" id="tech-body">
+
+      <!-- Motor -->
+      <div>
+        <div class="section-title" style="margin-bottom:8px">Motor</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <input id="motor-steps" class="tech-steps" type="number" value="200" min="1" max="9999">
+          <span style="font-size:.8rem;color:#999">steps</span>
+        </div>
+        <div class="row-btns" style="margin-bottom:8px">
+          <button class="btn btn-brown" onclick="techMotor('forward')">▶ Forward</button>
+          <button class="btn btn-brown" onclick="techMotor('backward')">◀ Backward</button>
+        </div>
+        <div class="row-btns">
+          <button class="btn btn-gray" onclick="publish('cmd/motor_stop','1')">■ Stop</button>
+          <button class="btn btn-blue" onclick="publish('cmd/motor_home','1')">⌂ Home</button>
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <!-- Piston -->
+      <div>
+        <div class="section-title" style="margin-bottom:8px">Piston</div>
+        <div class="row-btns">
+          <button class="btn btn-green"  onclick="publish('cmd/piston_extend','1')">↑ Extend</button>
+          <button class="btn btn-orange" onclick="publish('cmd/piston_retract','1')">↓ Retract</button>
+          <button class="btn btn-gray"   onclick="publish('cmd/piston_stop','1')">■ Stop</button>
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <!-- Insertion -->
+      <div>
+        <div class="section-title" style="margin-bottom:8px">Insertion</div>
+        <button class="btn btn-red btn-full" onclick="techInsert()">▶▶ Trigger Insertion Sequence</button>
+      </div>
+
     </div>
   </div>
 
@@ -836,27 +889,35 @@ function calcBurnTime() {
 }
 
 // ============================================================
-// SIMULATE INSERTION
+// SIMULATE INSERTION — now triggers a real insertion sequence
 // ============================================================
 function simulateInsertion() {
-  // Pick the side with more logs; prefer left on tie
-  let side;
-  if (logL === 0 && logR === 0) { showToast('No logs remaining to simulate'); return; }
-  side = (logL >= logR) ? 'l' : 'r';
+  if (!confirm('Trigger a real insertion sequence on the stove?')) return;
+  publish('cmd/insert', '1');
+  showToast('Insertion sequence triggered');
+}
 
-  if (side === 'l') {
-    logL = Math.max(0, logL - 1);
-    renderBars('left', logL);
-    document.getElementById('count-left').textContent = logL + ' logs';
-    publish('cmd/log_level_l', logL);
-  } else {
-    logR = Math.max(0, logR - 1);
-    renderBars('right', logR);
-    document.getElementById('count-right').textContent = logR + ' logs';
-    publish('cmd/log_level_r', logR);
-  }
-  calcBurnTime();
-  showToast('Insertion simulated — 1 log consumed (' + (side==='l'?'Left':'Right') + ')');
+// ============================================================
+// TECHNICAL MODE
+// ============================================================
+function toggleTechMode() {
+  const body  = document.getElementById('tech-body');
+  const arrow = document.getElementById('tech-arrow');
+  const open  = body.classList.contains('open');
+  body.classList.toggle('open', !open);
+  arrow.classList.toggle('open', !open);
+}
+
+function techMotor(dir) {
+  const steps = parseInt(document.getElementById('motor-steps').value) || 200;
+  publish('cmd/motor_' + dir, String(steps));
+  showToast('Motor ' + dir + ' ' + steps + ' steps');
+}
+
+function techInsert() {
+  if (!confirm('Trigger a real insertion sequence on the stove?')) return;
+  publish('cmd/insert', '1');
+  showToast('Insertion sequence triggered');
 }
 
 // ============================================================
