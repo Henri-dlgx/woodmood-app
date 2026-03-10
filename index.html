@@ -161,9 +161,23 @@
     .divider{border:none;border-top:1px solid #f0e0d0;margin:0}
 
     /* ── Technical Mode ── */
-    .tech-steps{width:90px;padding:8px;border:1px solid #d0b08a;border-radius:8px;
-      font-size:.9rem;text-align:center}
-    .tech-steps:focus{outline:none;border-color:#8B4513}
+    .tech-sec{font-size:.68rem;font-weight:800;color:#8B4513;text-transform:uppercase;
+      letter-spacing:.12em;border-bottom:2px solid #f0e0d0;padding-bottom:6px;margin-bottom:12px}
+    .tech-field-lbl{font-size:.78rem;color:#888;margin-bottom:5px}
+    .tech-input{width:100%;padding:9px 12px;border:1px solid #d0b08a;border-radius:8px;
+      font-size:.95rem;box-sizing:border-box}
+    .tech-input:focus{outline:none;border-color:#8B4513}
+    .tech-manual-block{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+    /* Toggle switch */
+    .toggle-wrap{display:flex;align-items:center;justify-content:space-between}
+    .toggle-label{font-size:.88rem;color:#444}
+    .tgl{position:relative;display:inline-block;width:48px;height:27px;flex-shrink:0}
+    .tgl input{opacity:0;width:0;height:0}
+    .tgl-sl{position:absolute;cursor:pointer;inset:0;background:#ccc;border-radius:27px;transition:.25s}
+    .tgl-sl:before{content:"";position:absolute;height:21px;width:21px;left:3px;bottom:3px;
+      background:#fff;border-radius:50%;transition:.25s;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+    input:checked + .tgl-sl{background:#27ae60}
+    input:checked + .tgl-sl:before{transform:translateX(21px)}
     .gap-col{display:flex;flex-direction:column;gap:8px}
 
     /* ── Toast ── */
@@ -409,41 +423,109 @@
     </div>
     <div class="settings-body" id="tech-body">
 
-      <!-- Motor -->
+      <!-- FAN CONTROL -->
       <div>
-        <div class="section-title" style="margin-bottom:8px">Motor</div>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-          <input id="motor-steps" class="tech-steps" type="number" value="200" min="1" max="9999">
-          <span style="font-size:.8rem;color:#999">steps</span>
+        <div class="tech-sec">Fan Control</div>
+        <div class="toggle-wrap">
+          <span class="toggle-label">Manual Mode</span>
+          <label class="tgl"><input type="checkbox" id="tog-fan-mode" onchange="setFanMode(this.checked)"><span class="tgl-sl"></span></label>
         </div>
-        <div class="row-btns" style="margin-bottom:8px">
+        <div id="fan-manual-ctrls" class="tech-manual-block" style="display:none">
+          <div>
+            <div class="tech-field-lbl">Main Fan Speed (%)</div>
+            <input id="fan-main-val" class="tech-input" type="number" min="0" max="100" value="50">
+          </div>
+          <div>
+            <div class="tech-field-lbl">Cooling Fan Speed (%)</div>
+            <input id="fan-cooling-val" class="tech-input" type="number" min="0" max="100" value="30">
+          </div>
+          <button class="btn btn-brown btn-full" onclick="applyFanSpeeds()">Apply Fan Speeds</button>
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <!-- AUTOMATIC INSERTION -->
+      <div>
+        <div class="tech-sec">Automatic Insertion</div>
+        <div class="toggle-wrap">
+          <span class="toggle-label">Auto Insertion</span>
+          <label class="tgl"><input type="checkbox" id="tog-auto-insert" onchange="setAutoInsertEn(this.checked)"><span class="tgl-sl"></span></label>
+        </div>
+        <button class="btn btn-red btn-full" style="margin-top:12px" onclick="techInsert()">▶▶ Manually Insert Log</button>
+      </div>
+
+      <hr class="divider">
+
+      <!-- TEMPERATURE CONTROL -->
+      <div>
+        <div class="tech-sec">Temperature Control</div>
+        <div class="toggle-wrap">
+          <span class="toggle-label">Auto Setpoint</span>
+          <label class="tgl"><input type="checkbox" id="tog-auto-setpoint" onchange="setAutoSP(this.checked)"><span class="tgl-sl"></span></label>
+        </div>
+        <div id="setpoint-manual-ctrls" style="display:none;margin-top:10px">
+          <div class="tech-field-lbl">Manual Setpoint (°C)</div>
+          <input id="tech-setpoint-input" class="tech-input" type="number" min="100" max="500" value="325">
+          <button class="btn btn-brown btn-full" style="margin-top:8px" onclick="applySetpoint()">Apply Setpoint</button>
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <!-- SYSTEM OPTIONS -->
+      <div>
+        <div class="tech-sec">System Options</div>
+        <div class="toggle-wrap">
+          <span class="toggle-label">Beeper</span>
+          <label class="tgl"><input type="checkbox" id="tog-beeper" onchange="publish('cmd/beeper',this.checked?'1':'0')"><span class="tgl-sl"></span></label>
+        </div>
+        <div class="toggle-wrap" style="margin-top:12px">
+          <span class="toggle-label">Max Temp Protection</span>
+          <label class="tgl"><input type="checkbox" id="tog-max-temp" onchange="publish('cmd/max_temp',this.checked?'1':'0')"><span class="tgl-sl"></span></label>
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <!-- MANUAL MOTOR CONTROL -->
+      <div>
+        <div class="tech-sec">Manual Motor Control</div>
+        <div class="tech-field-lbl">Steps</div>
+        <input id="motor-steps" class="tech-input" type="number" value="200" min="1" max="9999">
+        <div class="row-btns" style="margin-top:10px;margin-bottom:8px">
           <button class="btn btn-brown" onclick="techMotor('forward')">▶ Forward</button>
           <button class="btn btn-brown" onclick="techMotor('backward')">◀ Backward</button>
         </div>
         <div class="row-btns">
-          <button class="btn btn-gray" onclick="publish('cmd/motor_stop','1')">■ Stop</button>
-          <button class="btn btn-blue" onclick="publish('cmd/motor_home','1')">⌂ Home</button>
+          <button class="btn btn-gray" onclick="publish('cmd/motor_stop','1')">⏹ Stop</button>
+          <button class="btn btn-blue" onclick="publish('cmd/motor_home','1')">🏠 Home</button>
         </div>
       </div>
 
       <hr class="divider">
 
-      <!-- Piston -->
+      <!-- MANUAL PISTON CONTROL -->
       <div>
-        <div class="section-title" style="margin-bottom:8px">Piston</div>
-        <div class="row-btns">
+        <div class="tech-sec">Manual Piston Control</div>
+        <div class="row-btns" style="margin-bottom:8px">
           <button class="btn btn-green"  onclick="publish('cmd/piston_extend','1')">↑ Extend</button>
           <button class="btn btn-orange" onclick="publish('cmd/piston_retract','1')">↓ Retract</button>
-          <button class="btn btn-gray"   onclick="publish('cmd/piston_stop','1')">■ Stop</button>
+        </div>
+        <div class="row-btns">
+          <button class="btn btn-gray" onclick="publish('cmd/piston_stop','1')">⏹ Stop</button>
+          <button class="btn btn-gray" onclick="publish('cmd/piston_tare','1')">⊕ Tare</button>
         </div>
       </div>
 
       <hr class="divider">
 
-      <!-- Insertion -->
+      <!-- SYSTEM CONTROL -->
       <div>
-        <div class="section-title" style="margin-bottom:8px">Insertion</div>
-        <button class="btn btn-red btn-full" onclick="techInsert()">▶▶ Trigger Insertion Sequence</button>
+        <div class="tech-sec">System Control</div>
+        <button class="btn btn-red btn-full" onclick="techReset()">↺ Reset ESP32</button>
+        <p style="font-size:.72rem;color:#aaa;margin-top:8px;text-align:center">Warning: This will restart the controller</p>
+        <p style="font-size:.7rem;color:#bbb;margin-top:4px;text-align:center">Version · Mar 2026</p>
       </div>
 
     </div>
@@ -700,6 +782,7 @@ function applyFull(d) {
   if (d.maint_ramon !== undefined) document.getElementById('ramon-days').textContent = d.maint_ramon + ' days since last';
   if (d.maint_seal  !== undefined) document.getElementById('seal-days').textContent  = d.maint_seal  + ' days';
 
+  applyTechState(d);
   calcBurnTime();
   updateSystemState();
 }
@@ -900,6 +983,10 @@ function simulateInsertion() {
 // ============================================================
 // TECHNICAL MODE
 // ============================================================
+let techFanManual   = false;
+let techAutoInsertOn = true;
+let techAutoSP      = true;
+
 function toggleTechMode() {
   const body  = document.getElementById('tech-body');
   const arrow = document.getElementById('tech-arrow');
@@ -908,16 +995,76 @@ function toggleTechMode() {
   arrow.classList.toggle('open', !open);
 }
 
+function applyTechState(d) {
+  if (d.fan_mode !== undefined) {
+    techFanManual = d.fan_mode === 'manual';
+    document.getElementById('tog-fan-mode').checked = techFanManual;
+    document.getElementById('fan-manual-ctrls').style.display = techFanManual ? 'flex' : 'none';
+  }
+  if (d.fan_main    !== undefined) document.getElementById('fan-main-val').value   = d.fan_main;
+  if (d.fan_cooling !== undefined) document.getElementById('fan-cooling-val').value = d.fan_cooling;
+  if (d.auto_setpoint !== undefined) {
+    techAutoSP = !!d.auto_setpoint;
+    document.getElementById('tog-auto-setpoint').checked = techAutoSP;
+    document.getElementById('setpoint-manual-ctrls').style.display = techAutoSP ? 'none' : 'block';
+  }
+  if (d.setpoint      !== undefined) document.getElementById('tech-setpoint-input').value = d.setpoint;
+  if (d.beeper        !== undefined) document.getElementById('tog-beeper').checked    = !!d.beeper;
+  if (d.max_temp_prot !== undefined) document.getElementById('tog-max-temp').checked  = !!d.max_temp_prot;
+  if (d.auto_insert   !== undefined) {
+    techAutoInsertOn = !!d.auto_insert;
+    document.getElementById('tog-auto-insert').checked = techAutoInsertOn;
+  }
+}
+
+function setFanMode(isManual) {
+  techFanManual = isManual;
+  publish('cmd/fan_mode', isManual ? 'manual' : 'auto');
+  document.getElementById('fan-manual-ctrls').style.display = isManual ? 'flex' : 'none';
+}
+
+function applyFanSpeeds() {
+  const m = Math.min(100, Math.max(0, parseInt(document.getElementById('fan-main-val').value)    || 0));
+  const c = Math.min(100, Math.max(0, parseInt(document.getElementById('fan-cooling-val').value) || 0));
+  publish('cmd/fan_main',    String(m));
+  publish('cmd/fan_cooling', String(c));
+  showToast('Fan speeds applied');
+}
+
+function setAutoSP(isAuto) {
+  techAutoSP = isAuto;
+  publish('cmd/auto_setpoint', isAuto ? '1' : '0');
+  document.getElementById('setpoint-manual-ctrls').style.display = isAuto ? 'none' : 'block';
+}
+
+function applySetpoint() {
+  const sp = parseInt(document.getElementById('tech-setpoint-input').value) || 325;
+  publish('cmd/setpoint', String(sp));
+  showToast('Setpoint → ' + sp + '°C');
+}
+
+function setAutoInsertEn(enabled) {
+  techAutoInsertOn = enabled;
+  publish('cmd/auto_insert_en', enabled ? '1' : '0');
+  showToast('Auto insertion ' + (enabled ? 'enabled' : 'disabled'));
+}
+
 function techMotor(dir) {
   const steps = parseInt(document.getElementById('motor-steps').value) || 200;
   publish('cmd/motor_' + dir, String(steps));
-  showToast('Motor ' + dir + ' ' + steps + ' steps');
+  showToast('Motor ' + dir + ' — ' + steps + ' steps');
 }
 
 function techInsert() {
   if (!confirm('Trigger a real insertion sequence on the stove?')) return;
   publish('cmd/insert', '1');
   showToast('Insertion sequence triggered');
+}
+
+function techReset() {
+  if (!confirm('Restart the ESP32 controller?')) return;
+  publish('cmd/reset', '1');
+  showToast('ESP32 restarting…');
 }
 
 // ============================================================
