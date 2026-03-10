@@ -178,6 +178,11 @@
       background:#fff;border-radius:50%;transition:.25s;box-shadow:0 1px 3px rgba(0,0,0,.3)}
     input:checked + .tgl-sl{background:#27ae60}
     input:checked + .tgl-sl:before{transform:translateX(21px)}
+    /* Side selector */
+    .side-sel{display:flex;background:#f5e8da;border-radius:10px;padding:3px;gap:3px;margin-bottom:4px}
+    .side-opt{flex:1;text-align:center;padding:9px 6px;border-radius:8px;font-weight:700;
+      font-size:.9rem;cursor:pointer;transition:background .2s,color .2s;color:#8B4513;user-select:none}
+    .side-opt.active{background:#8B4513;color:#fff}
     .gap-col{display:flex;flex-direction:column;gap:8px}
 
     /* ── Toast ── */
@@ -422,6 +427,18 @@
       <span class="arrow" id="tech-arrow">▼</span>
     </div>
     <div class="settings-body" id="tech-body">
+
+      <!-- SIDE SELECTOR -->
+      <div>
+        <div class="tech-sec">Active Side</div>
+        <div class="side-sel">
+          <div class="side-opt active" id="side-opt-l" onclick="selectSide('l')">◀ LEFT</div>
+          <div class="side-opt"        id="side-opt-r" onclick="selectSide('r')">RIGHT ▶</div>
+        </div>
+        <p style="font-size:.72rem;color:#aaa;margin-top:6px;text-align:center">Applies to insertion and door/rewind operations</p>
+      </div>
+
+      <hr class="divider">
 
       <!-- FAN CONTROL -->
       <div>
@@ -976,16 +993,23 @@ function calcBurnTime() {
 // ============================================================
 function simulateInsertion() {
   if (!confirm('Trigger a real insertion sequence on the stove?')) return;
-  publish('cmd/insert', '1');
-  showToast('Insertion sequence triggered');
+  publish('cmd/insert', techSide);
+  showToast('Insertion triggered — ' + (techSide === 'l' ? 'Left' : 'Right') + ' side');
 }
 
 // ============================================================
 // TECHNICAL MODE
 // ============================================================
-let techFanManual   = false;
+let techFanManual    = false;
 let techAutoInsertOn = true;
-let techAutoSP      = true;
+let techAutoSP       = true;
+let techSide         = 'l';
+
+function selectSide(s) {
+  techSide = s;
+  document.getElementById('side-opt-l').classList.toggle('active', s === 'l');
+  document.getElementById('side-opt-r').classList.toggle('active', s === 'r');
+}
 
 function toggleTechMode() {
   const body  = document.getElementById('tech-body');
@@ -1056,9 +1080,10 @@ function techMotor(dir) {
 }
 
 function techInsert() {
-  if (!confirm('Trigger a real insertion sequence on the stove?')) return;
-  publish('cmd/insert', '1');
-  showToast('Insertion sequence triggered');
+  const sideName = techSide === 'l' ? 'Left' : 'Right';
+  if (!confirm('Trigger insertion on the ' + sideName + ' side?')) return;
+  publish('cmd/insert', techSide);
+  showToast('Insertion triggered — ' + sideName + ' side');
 }
 
 function techReset() {
