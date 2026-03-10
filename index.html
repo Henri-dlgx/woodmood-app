@@ -38,7 +38,8 @@
     /* ── System state button ── */
     .sys-btn{width:100%;border:none;border-radius:12px;font-size:1rem;font-weight:700;
       padding:14px;letter-spacing:.03em;transition:filter .15s}
-    .sys-btn.startup  {background:#d4a04a;color:#fff;cursor:default}
+    .sys-btn.startup  {background:#d4a04a;color:#fff;cursor:pointer}
+    .sys-btn.startup:hover{filter:brightness(1.08)}
     .sys-btn.auto     {background:#27ae60;color:#fff;cursor:pointer}
     .sys-btn.auto:hover{filter:brightness(1.08)}
     .sys-btn.cooldown {background:#2980b9;color:#fff;cursor:pointer}
@@ -240,14 +241,15 @@
   <!-- ── Fault banner ── -->
   <div id="fault-banner">
     <div class="fault-title" id="fault-title">⚠️ FAULT DETECTED</div>
+    <div id="fault-reason" style="font-size:.8rem;opacity:.8;margin-bottom:10px;display:none"></div>
     <div class="fault-steps">
-      <div class="fault-step"><span class="fault-step-num">1.</span><span>Take glove and poker</span></div>
-      <div class="fault-step"><span class="fault-step-num">2.</span><span>Open door with the button below</span></div>
-      <div class="fault-step"><span class="fault-step-num">3.</span><span>Push log into the fire or remove it</span></div>
-      <div class="fault-step"><span class="fault-step-num">4.</span><span>Close the cartridge door</span></div>
-      <div class="fault-step"><span class="fault-step-num">5.</span><span>Press Resolve Fault</span></div>
+      <div class="fault-step"><span class="fault-step-num">1.</span><span>🧤 Take glove and poker</span></div>
+      <div class="fault-step"><span class="fault-step-num">2.</span><span>🔓 Open door with the button below</span></div>
+      <div class="fault-step"><span class="fault-step-num">3.</span><span>🪵 Push log into the fire or remove it</span></div>
+      <div class="fault-step"><span class="fault-step-num">4.</span><span>🚪 Close the cartridge door</span></div>
+      <div class="fault-step"><span class="fault-step-num">5.</span><span>✅ Press Resolve Fault</span></div>
     </div>
-    <button class="btn btn-green btn-full" id="fault-action-btn" onclick="faultActionClick()">Unlock door</button>
+    <button class="btn btn-green btn-full" id="fault-action-btn" onclick="faultActionClick()">🔓 Unlock door</button>
   </div>
 
   <!-- ── Temperature ── -->
@@ -313,12 +315,6 @@
 
     </div>
 
-    <!-- Simulate insertion (test tool) -->
-    <div style="margin-top:14px;border-top:1px solid #f0e0d0;padding-top:12px">
-      <button class="btn btn-sim btn-full" onclick="simulateInsertion()" style="flex:none;width:100%">
-        ⚙ Simulate Insertion
-      </button>
-    </div>
 
   </div>
 
@@ -449,9 +445,9 @@
       <!-- FAN CONTROL -->
       <div>
         <div class="tech-sec">Fan Control</div>
-        <div class="toggle-wrap">
-          <span class="toggle-label">Manual Mode</span>
-          <label class="tgl"><input type="checkbox" id="tog-fan-mode" onchange="setFanMode(this.checked)"><span class="tgl-sl"></span></label>
+        <div class="side-sel" style="margin-bottom:6px">
+          <div class="side-opt active" id="fan-mode-auto"   onclick="setFanMode(false)">⚡ AUTO</div>
+          <div class="side-opt"        id="fan-mode-manual" onclick="setFanMode(true)">✋ MANUAL</div>
         </div>
         <div id="fan-manual-ctrls" class="tech-manual-block" style="display:none">
           <div>
@@ -475,7 +471,7 @@
           <span class="toggle-label">Auto Insertion</span>
           <label class="tgl"><input type="checkbox" id="tog-auto-insert" onchange="setAutoInsertEn(this.checked)"><span class="tgl-sl"></span></label>
         </div>
-        <button class="btn btn-red btn-full" style="margin-top:12px" onclick="techInsert()">▶▶ Manually Insert Log</button>
+        <button class="btn btn-red btn-full" id="manual-insert-btn" style="margin-top:12px" onclick="techInsert()">▶▶ Manually Insert Log</button>
       </div>
 
       <hr class="divider">
@@ -505,7 +501,14 @@
         </div>
         <div class="toggle-wrap" style="margin-top:12px">
           <span class="toggle-label">Max Temp Protection</span>
-          <label class="tgl"><input type="checkbox" id="tog-max-temp" onchange="publish('cmd/max_temp',this.checked?'1':'0')"><span class="tgl-sl"></span></label>
+          <label class="tgl"><input type="checkbox" id="tog-max-temp" onchange="setMaxTempEnabled(this.checked)"><span class="tgl-sl"></span></label>
+        </div>
+        <div id="max-temp-val-row" style="display:none;margin-top:10px">
+          <div class="tech-field-lbl">Fan-cap threshold (°C)</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="max-temp-threshold" class="tech-input" type="number" min="200" max="600" value="500" style="flex:1">
+            <button class="btn btn-brown btn-sm" style="flex:none" onclick="applyMaxTemp()">Set</button>
+          </div>
         </div>
       </div>
 
@@ -556,7 +559,7 @@
 
   <!-- ── Footer ── -->
   <div style="text-align:center;font-size:.72rem;color:rgba(255,255,255,.5);padding-bottom:8px">
-    WoodMood · <span id="footer-serial">—</span>
+    WoodMood · <span id="footer-serial">—</span><span id="footer-ota"></span>
   </div>
 
 </div>
@@ -800,6 +803,13 @@ function applyFull(d) {
     const h = Math.floor(d.uptime/3600), m = Math.floor((d.uptime%3600)/60);
     document.getElementById('footer-serial').textContent = prefix + '  ·  up ' + h + 'h ' + m + 'm';
   }
+  if (d.local_ip && d.local_ip !== '0.0.0.0') {
+    const el = document.getElementById('footer-ota');
+    if (el) el.innerHTML = '  ·  <a href="http://' + d.local_ip + '/update" target="_blank"'
+      + ' style="color:rgba(255,255,255,.5);text-decoration:none" title="Open OTA updater">'
+      + d.local_ip + '/update</a>'
+      + ' <span style="opacity:.55">pwd: ' + (cfg.pass || '—') + '</span>';
+  }
   if (d.heap_free !== undefined) applyHeap(d.heap_free, d.heap_min || 0, d.heap_max_alloc || 0);
   if (d.maint_joint !== undefined) document.getElementById('joint-days').textContent = d.maint_joint + ' days';
   if (d.maint_ramon !== undefined) document.getElementById('ramon-days').textContent = d.maint_ramon + ' days since last';
@@ -875,16 +885,25 @@ function applySystemState(state) {
 }
 
 function sysButtonClick() {
-  if (systemState === 'auto' || systemState === 'active') {
+  if (systemState === 'startup') {
+    const hot = stoveTemp !== null && stoveTemp > 150;
+    const msg = hot
+      ? 'Stove is hot (' + Math.round(stoveTemp) + '°). Switch to cooldown?'
+      : 'Stove is cold. Turn off system?';
+    if (!confirm(msg)) return;
+    inCooldown = true;
+    publish('cmd/cooldown', '1');
+    applySystemState(hot ? 'cooldown' : 'standby');
+  } else if (systemState === 'auto' || systemState === 'active') {
     if (!confirm('Switch to cooldown mode?')) return;
     inCooldown = true;
     publish('cmd/cooldown', '1');
-    applySystemState('cooldown');          // optimistic — firmware confirms via status/system_state
+    applySystemState('cooldown');
   } else if (systemState === 'cooldown') {
     if (!confirm('Cancel cooldown and return to automatic operation?')) return;
     inCooldown = false;
     publish('cmd/cooldown', '0');
-    applySystemState('auto');             // optimistic — firmware confirms via status/system_state
+    applySystemState('auto');
   }
 }
 
@@ -892,27 +911,38 @@ function sysButtonClick() {
 // FAULT
 // ============================================================
 function setFault(active) {
+  const wasActive = faultActive;
   faultActive = !!(active || active === '1' || active === true);
   const banner = document.getElementById('fault-banner');
   if (faultActive) {
     banner.classList.add('show');
-    faultActionPhase = 'unlock';
-    const btn = document.getElementById('fault-action-btn');
-    btn.textContent  = 'Unlock door';
-    btn.className    = 'btn btn-green btn-full';
-    clearTimeout(faultDoorTimer);
+    if (!wasActive) {
+      // Fresh fault — reset to unlock phase
+      faultActionPhase = 'unlock';
+      const btn = document.getElementById('fault-action-btn');
+      btn.textContent  = '🔓 Unlock door';
+      btn.className    = 'btn btn-green btn-full';
+      clearTimeout(faultDoorTimer);
+    }
+    // If already active, preserve current phase (don't reset every MQTT cycle)
   } else {
     banner.classList.remove('show');
+    faultActionPhase = 'unlock';   // reset for next fault
     clearTimeout(faultDoorTimer);
+    const el = document.getElementById('fault-reason');
+    if (el) { el.style.display = 'none'; el.textContent = ''; }
   }
   updateSystemState();
 }
 
 function setFaultMsg(msg) {
+  if (!msg) return;
   const lower = msg.toLowerCase();
   const side  = lower.includes('right') ? 'Right' : lower.includes('left') ? 'Left' : null;
   document.getElementById('fault-title').textContent =
     side ? `⚠️ Fault — log stuck in trapdoor (${side})` : '⚠️ FAULT DETECTED';
+  const el = document.getElementById('fault-reason');
+  if (el && msg) { el.textContent = msg; el.style.display = 'block'; }
 }
 
 function faultActionClick() {
@@ -1042,30 +1072,61 @@ function toggleTechMode() {
 }
 
 function applyTechState(d) {
+  const focused = document.activeElement;
   if (d.fan_mode !== undefined) {
     techFanManual = d.fan_mode === 'manual';
-    document.getElementById('tog-fan-mode').checked = techFanManual;
+    document.getElementById('fan-mode-auto').classList.toggle('active',   !techFanManual);
+    document.getElementById('fan-mode-manual').classList.toggle('active',  techFanManual);
     document.getElementById('fan-manual-ctrls').style.display = techFanManual ? 'flex' : 'none';
   }
-  if (d.fan_main    !== undefined) document.getElementById('fan-main-val').value   = d.fan_main;
-  if (d.fan_cooling !== undefined) document.getElementById('fan-cooling-val').value = d.fan_cooling;
+  // Only sync fan/setpoint inputs when the user is not typing in them
+  if (d.fan_main !== undefined) {
+    const el = document.getElementById('fan-main-val');
+    if (el !== focused) el.value = d.fan_main;
+  }
+  if (d.fan_cooling !== undefined) {
+    const el = document.getElementById('fan-cooling-val');
+    if (el !== focused) el.value = d.fan_cooling;
+  }
   if (d.auto_setpoint !== undefined) {
     techAutoSP = !!d.auto_setpoint;
     document.getElementById('tog-auto-setpoint').checked = techAutoSP;
     document.getElementById('setpoint-manual-ctrls').style.display = techAutoSP ? 'none' : 'block';
   }
-  if (d.setpoint      !== undefined) document.getElementById('tech-setpoint-input').value = d.setpoint;
+  if (d.setpoint !== undefined) {
+    const el = document.getElementById('tech-setpoint-input');
+    if (el !== focused) el.value = d.setpoint;
+  }
   if (d.beeper        !== undefined) document.getElementById('tog-beeper').checked    = !!d.beeper;
-  if (d.max_temp_prot !== undefined) document.getElementById('tog-max-temp').checked  = !!d.max_temp_prot;
-  if (d.auto_insert   !== undefined) {
+  if (d.max_temp_prot !== undefined) {
+    document.getElementById('tog-max-temp').checked = !!d.max_temp_prot;
+    document.getElementById('max-temp-val-row').style.display = d.max_temp_prot ? 'block' : 'none';
+  }
+  if (d.max_temp_val !== undefined) {
+    const el = document.getElementById('max-temp-threshold');
+    if (el !== focused) el.value = d.max_temp_val;
+  }
+  if (d.auto_insert !== undefined) {
     techAutoInsertOn = !!d.auto_insert;
     document.getElementById('tog-auto-insert').checked = techAutoInsertOn;
+    const mb = document.getElementById('manual-insert-btn');
+    if (mb) mb.style.display = techAutoInsertOn ? 'none' : '';
+  }
+  // fault_ready: firmware signals door is open and log can be resolved
+  if (d.fault_ready && faultActive && faultActionPhase === 'unlock') {
+    clearTimeout(faultDoorTimer);
+    faultActionPhase = 'resolve';
+    const btn = document.getElementById('fault-action-btn');
+    btn.textContent = '✅ Resolve Fault';
+    btn.className   = 'btn btn-red btn-full';
   }
 }
 
 function setFanMode(isManual) {
   techFanManual = isManual;
   publish('cmd/fan_mode', isManual ? 'manual' : 'auto');
+  document.getElementById('fan-mode-auto').classList.toggle('active',   !isManual);
+  document.getElementById('fan-mode-manual').classList.toggle('active',  isManual);
   document.getElementById('fan-manual-ctrls').style.display = isManual ? 'flex' : 'none';
 }
 
@@ -1092,7 +1153,20 @@ function applySetpoint() {
 function setAutoInsertEn(enabled) {
   techAutoInsertOn = enabled;
   publish('cmd/auto_insert_en', enabled ? '1' : '0');
+  const mb = document.getElementById('manual-insert-btn');
+  if (mb) mb.style.display = enabled ? 'none' : '';
   showToast('Auto insertion ' + (enabled ? 'enabled' : 'disabled'));
+}
+
+function setMaxTempEnabled(enabled) {
+  publish('cmd/max_temp', enabled ? '1' : '0');
+  document.getElementById('max-temp-val-row').style.display = enabled ? 'block' : 'none';
+}
+
+function applyMaxTemp() {
+  const val = parseInt(document.getElementById('max-temp-threshold').value) || 500;
+  publish('cmd/max_temp_val', String(val));
+  showToast('Max temp threshold \u2192 ' + val + '\u00b0C');
 }
 
 function techMotor(dir) {
