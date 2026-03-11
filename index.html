@@ -419,28 +419,6 @@
     </div>
   </div>
 
-  <!-- ── Safety Monitor (console: safety on/off) ── -->
-  <div id="safety-monitor" style="display:none">
-    <div class="heap-row">
-      <span class="heap-lbl">Safety</span>
-      <span id="safety-state" class="heap-val">—</span>
-      <span class="heap-lbl">·  max-temp</span>
-      <span id="safety-maxtemp" class="heap-val">—</span>
-      <span class="heap-lbl">·  side</span>
-      <span id="safety-side" class="heap-val">—</span>
-    </div>
-  </div>
-
-  <!-- ── Heartbeat Monitor (console: heartbeat on/off) ── -->
-  <div id="heartbeat-monitor" style="display:none">
-    <div class="heap-row">
-      <span class="heap-lbl">Heartbeat</span>
-      <span id="hb-ago" class="heap-val">—</span>
-      <span class="heap-lbl">ago  ·  uptime</span>
-      <span id="hb-uptime" class="heap-val">—</span>
-    </div>
-  </div>
-
   <!-- ── Technical Mode ── -->
   <div class="card">
     <div class="settings-toggle" onclick="toggleTechMode()">
@@ -576,22 +554,6 @@
         <p style="font-size:.7rem;color:#bbb;margin-top:4px;text-align:center">Version · Mar 2026</p>
       </div>
 
-      <hr class="divider">
-
-      <!-- CONSOLE -->
-      <div>
-        <div class="tech-sec">Console</div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input id="tech-cmd" class="tech-input" type="text"
-            placeholder="heap · safety · heartbeat · status"
-            autocomplete="off" spellcheck="false"
-            onkeydown="if(event.key==='Enter'){runCmd();event.preventDefault();}"
-            style="flex:1">
-          <button class="btn btn-gray btn-sm" style="flex:none" onclick="runCmd()">↵ Run</button>
-        </div>
-        <p style="font-size:.68rem;color:#bbb;margin-top:5px">Type <em>&lt;name&gt; on</em> or <em>&lt;name&gt; off</em></p>
-      </div>
-
     </div>
   </div>
 
@@ -646,12 +608,7 @@ let logL               = 0;      // current left log count
 let logR               = 0;      // current right log count
 let bleRoomTemp        = null;   // BLE room sensor temperature (°C), null = unavailable
 let bleRoomTempOk      = false;  // true when BLE sensor has a valid reading
-
-// ── Debug display flags (toggled via console in tech panel) ──
-let showHeap      = false;
-let showSafety    = false;
-let showHeartbeat = false;
-let showStatus    = true;
+let lastKnownBleTemp   = null;   // last valid BLE reading — shown when sensor goes offline
 
 // ── Pending-command lock — prevents MQTT rubber-banding toggles ──
 const pendingCmds = {};
@@ -703,7 +660,6 @@ function saveAndConnect() {
 
 function connect() {
   prefix = 'WoodMood' + cfg.serial;
-  document.getElementById('footer-serial').textContent = prefix;
   setDotState('connecting');
 
   if (client) { try { client.end(true); } catch(e){} }
@@ -851,9 +807,7 @@ function applyFull(d) {
   if (d.system_state  !== undefined) { remoteStateReceived = true; applySystemState(d.system_state); }
   if (d.uptime !== undefined) {
     const h = Math.floor(d.uptime/3600), m = Math.floor((d.uptime%3600)/60);
-    document.getElementById('footer-serial').textContent = prefix + '  ·  up ' + h + 'h ' + m + 'm';
-    const uel = document.getElementById('hb-uptime');
-    if (uel) uel.textContent = h + 'h ' + m + 'm';
+    document.getElementById('footer-serial').textContent = 'up ' + h + 'h ' + m + 'm';
   }
   if (d.local_ip && d.local_ip !== '0.0.0.0') {
     const el = document.getElementById('footer-ota');
@@ -863,15 +817,6 @@ function applyFull(d) {
       + ' <span style="opacity:.55">pwd: &lt;MQTT password&gt;</span>';
   }
   if (d.heap_free !== undefined) applyHeap(d.heap_free, d.heap_min || 0, d.heap_max_alloc || 0);
-  // Update safety monitor panel (only renders when showSafety is true)
-  if (showSafety) {
-    const ssEl = document.getElementById('safety-state');
-    if (ssEl) ssEl.textContent = faultActive ? '⚠ FAULT' : '✓ OK';
-    const mtEl = document.getElementById('safety-maxtemp');
-    if (mtEl && d.max_temp_prot !== undefined) mtEl.textContent = d.max_temp_prot ? 'on' : 'off';
-    const sdEl = document.getElementById('safety-side');
-    if (sdEl) sdEl.textContent = faultSide || '—';
-  }
   if (d.maint_joint !== undefined) document.getElementById('joint-days').textContent = d.maint_joint + ' days';
   if (d.maint_ramon !== undefined) document.getElementById('ramon-days').textContent = d.maint_ramon + ' days since last';
   if (d.maint_seal  !== undefined) document.getElementById('seal-days').textContent  = d.maint_seal  + ' days';
@@ -889,13 +834,24 @@ function updateBleRoomTemp() {
   const lbl = document.getElementById('ble-room-label');
   if (!el) return;
   if (bleRoomTempOk && bleRoomTemp !== null) {
-    el.textContent   = bleRoomTemp.toFixed(1) + '°';
-    lbl.textContent  = 'Room temperature';
-    el.style.opacity = '1';
+    lastKnownBleTemp = bleRoomTemp;
+    el.textContent      = bleRoomTemp.toFixed(1) + '°';
+    el.style.fontStyle  = 'normal';
+    el.style.opacity    = '1';
+    lbl.textContent     = 'Room temperature';
+    lbl.style.fontStyle = 'normal';
+  } else if (lastKnownBleTemp !== null) {
+    el.textContent      = lastKnownBleTemp.toFixed(1) + '°';
+    el.style.fontStyle  = 'italic';
+    el.style.opacity    = '0.65';
+    lbl.textContent     = 'Last measured';
+    lbl.style.fontStyle = 'italic';
   } else {
-    el.textContent   = '—°';
-    lbl.textContent  = 'Room (no sensor)';
-    el.style.opacity = '0.5';
+    el.textContent      = '—°';
+    el.style.fontStyle  = 'normal';
+    el.style.opacity    = '0.5';
+    lbl.textContent     = 'Room (no sensor)';
+    lbl.style.fontStyle = 'normal';
   }
 }
 
@@ -1285,8 +1241,6 @@ function showToast(msg) {
 // HEAP MONITOR
 // ============================================================
 function applyHeap(freeB, minFreeB, maxAllocB) {
-  if (!showHeap) return; // only render when the console has enabled it
-
   const freeKB    = (freeB    / 1024).toFixed(1);
   const minFreeKB = (minFreeB / 1024).toFixed(1);
 
@@ -1304,47 +1258,6 @@ function applyHeap(freeB, minFreeB, maxAllocB) {
   document.getElementById('heap-min-val').style.color =
     minFreeB < 20000 ? '#e74c3c' : minFreeB < 50000 ? '#f39c12' : 'rgba(255,255,255,.75)';
 }
-
-// ============================================================
-// DEV CONSOLE
-// ============================================================
-function runCmd() {
-  const inp = document.getElementById('tech-cmd');
-  if (!inp) return;
-  const parts = inp.value.trim().toLowerCase().split(/\s+/);
-  const token = parts[0], stateStr = parts[1];
-  if (stateStr !== 'on' && stateStr !== 'off') return; // unrecognised — leave input alone
-  const on = stateStr === 'on';
-  switch (token) {
-    case 'heap':
-      showHeap = on;
-      document.getElementById('heap-monitor').style.display = on ? '' : 'none';
-      break;
-    case 'safety':
-      showSafety = on;
-      document.getElementById('safety-monitor').style.display = on ? '' : 'none';
-      break;
-    case 'heartbeat':
-      showHeartbeat = on;
-      document.getElementById('heartbeat-monitor').style.display = on ? '' : 'none';
-      break;
-    case 'status':
-      showStatus = on;
-      document.getElementById('sys-state-card').style.display = on ? '' : 'none';
-      break;
-    default:
-      return; // unknown command — don't clear the input
-  }
-  inp.value = '';
-}
-
-// Heartbeat monitor ticker — updates "X s ago" display every second
-setInterval(() => {
-  if (!showHeartbeat) return;
-  const el = document.getElementById('hb-ago');
-  if (!el || !lastHbTime) return;
-  el.textContent = Math.round((Date.now() - lastHbTime) / 1000) + 's';
-}, 1000);
 
 // ============================================================
 // SETTINGS — ALERTS
