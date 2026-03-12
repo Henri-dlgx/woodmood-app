@@ -44,6 +44,8 @@
     .sys-btn.auto:hover{filter:brightness(1.08)}
     .sys-btn.cooldown {background:#2980b9;color:#fff;cursor:pointer}
     .sys-btn.cooldown:hover{filter:brightness(1.1)}
+    .sys-btn.standby  {background:#7f8c8d;color:#fff;cursor:pointer}
+    .sys-btn.standby:hover{filter:brightness(1.1)}
     .sys-btn.fault    {background:#c0392b;color:#fff;cursor:default;
       animation:faultpulse 2s infinite alternate}
     @keyframes faultpulse{to{background:#922b21}}
@@ -546,6 +548,16 @@
 
       <hr class="divider">
 
+      <!-- SIM TEMP (INPUT_TEMP firmware build only) -->
+      <div>
+        <div class="tech-sec">Simulated Stove Temp</div>
+        <div class="tech-field-lbl">Override thermocouple (°C) — requires INPUT_TEMP firmware</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="sim-temp-val" class="tech-input" type="number" min="0" max="1000" value="300" placeholder="°C" style="flex:1">
+          <button class="btn btn-brown btn-sm" style="flex:none" onclick="setSimTemp()">Set</button>
+        </div>
+      </div>
+
       <!-- SYSTEM CONTROL -->
       <div>
         <div class="tech-sec">System Control</div>
@@ -612,7 +624,7 @@ let lastKnownBleTemp   = null;   // last valid BLE reading — shown when sensor
 
 // ── Pending-command lock — prevents MQTT rubber-banding toggles ──
 const pendingCmds = {};
-const PENDING_TTL = 2500; // ms — ignore MQTT updates for this long after a command
+const PENDING_TTL = 4000; // ms — ignore MQTT updates for this long after a command
 function lockField(f) { pendingCmds[f] = Date.now() + PENDING_TTL; }
 function isLocked(f)  { return !!(pendingCmds[f] && Date.now() < pendingCmds[f]); }
 
@@ -758,7 +770,8 @@ function onMessage(topic, payloadBuf) {
   }
   if (sub === 'status/system_state') {
     remoteStateReceived = true;
-    applySystemState(payload); return;
+    if (!isLocked('system_state')) applySystemState(payload);
+    return;
   }
   if (sub === 'status/maint_joint')  { document.getElementById('joint-days').textContent = payload + ' days'; return; }
   if (sub === 'status/maint_ramon')  { document.getElementById('ramon-days').textContent = payload + ' days since last'; return; }
@@ -804,7 +817,7 @@ function applyFull(d) {
   if (d.system_active !== undefined) sysActive = !!d.system_active;
   if (d.fault         !== undefined) setFault(d.fault);
   if (d.fault_side    !== undefined) faultSide = d.fault_side;
-  if (d.system_state  !== undefined) { remoteStateReceived = true; applySystemState(d.system_state); }
+  if (d.system_state  !== undefined) { remoteStateReceived = true; if (!isLocked('system_state')) applySystemState(d.system_state); }
   if (d.uptime !== undefined) {
     const h = Math.floor(d.uptime/3600), m = Math.floor((d.uptime%3600)/60);
     document.getElementById('footer-serial').textContent = 'up ' + h + 'h ' + m + 'm';
@@ -883,12 +896,16 @@ function updateSystemState() {
 // Render system state button — accepts both firmware strings and local strings.
 function applySystemState(state) {
   systemState = state;
+  // Clean up cooldown flag when system reaches standby naturally
+  if (state === 'standby' || state === 'startup' || state === 'auto') {
+    if (state !== 'cooldown') inCooldown = false;
+  }
   const btn    = document.getElementById('sys-btn');
   const labels = {
     startup:       'Startup',
     auto:          'Automatic Operation',
     cooldown:      'Cooldown',
-    standby:       'Standby',
+    standby:       'Off — Press to Start',
     fault:         'Fault Condition',
     shutting_down: 'Cooling Down',
     active:        'Automatic Operation',  // legacy fallback
@@ -902,25 +919,42 @@ function applySystemState(state) {
 }
 
 function sysButtonClick() {
-  if (systemState === 'startup') {
+  // Use CSS class as the authoritative source for the button's current state.
+  // This is a fallback safety net: if the `systemState` JS variable is stale,
+  // null, or mismatched (e.g. a duplicate MQTT message arrived out-of-order),
+  // we still handle the click correctly based on what the button visually shows.
+  const btn        = document.getElementById('sys-btn');
+  const btnState   = systemState || [...btn.classList].find(c => c !== 'sys-btn') || 'startup';
+
+  if (btnState === 'startup') {
     const hot = stoveTemp !== null && stoveTemp > 150;
     const msg = hot
       ? 'Stove is hot (' + Math.round(stoveTemp) + '°). Switch to cooldown?'
       : 'Stove is cold. Turn off system?';
     if (!confirm(msg)) return;
     inCooldown = true;
+    lockField('system_state');
     publish('cmd/cooldown', '1');
     applySystemState(hot ? 'cooldown' : 'standby');
-  } else if (systemState === 'auto' || systemState === 'active') {
+  } else if (btnState === 'auto' || btnState === 'active') {
     if (!confirm('Switch to cooldown mode?')) return;
     inCooldown = true;
+    lockField('system_state');
     publish('cmd/cooldown', '1');
     applySystemState('cooldown');
-  } else if (systemState === 'cooldown') {
+  } else if (btnState === 'cooldown') {
     if (!confirm('Cancel cooldown and return to automatic operation?')) return;
     inCooldown = false;
+    lockField('system_state');
     publish('cmd/cooldown', '0');
     applySystemState('auto');
+  } else if (btnState === 'standby') {
+    // No confirm needed — button already reads "Off — Press to Start".
+    // The user explicitly tapped it; an extra dialog just adds friction and
+    // widens the timing window where a QoS-1 duplicate cooldown can slip through.
+    lockField('system_state');
+    publish('cmd/start', '1');
+    applySystemState('startup');
   }
 }
 
@@ -1223,6 +1257,13 @@ function techReset() {
   if (!confirm('Restart the ESP32 controller?')) return;
   publish('cmd/reset', '1');
   showToast('ESP32 restarting…');
+}
+
+function setSimTemp() {
+  const t = parseFloat(document.getElementById('sim-temp-val').value);
+  if (isNaN(t) || t < 0 || t > 1000) { showToast('Enter 0–1000 °C'); return; }
+  publish('cmd/input_temp', String(t));
+  showToast('Sim temp → ' + t + '°C');
 }
 
 // ============================================================
