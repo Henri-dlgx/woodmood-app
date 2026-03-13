@@ -1188,11 +1188,12 @@ function applyTechState(d) {
     document.getElementById('fan-manual-ctrls').style.display = techFanManual ? 'flex' : 'none';
   }
   // Only sync fan/setpoint inputs when the user is not typing in them
-  if (d.fan_main !== undefined) {
+  // and no manual Set command is in flight (4 s lock after applyFanSpeeds).
+  if (d.fan_main !== undefined && !isLocked('fan_main')) {
     const el = document.getElementById('fan-main-val');
     if (el !== focused) el.value = d.fan_main;
   }
-  if (d.fan_cooling !== undefined) {
+  if (d.fan_cooling !== undefined && !isLocked('fan_cooling')) {
     const el = document.getElementById('fan-cooling-val');
     if (el !== focused) el.value = d.fan_cooling;
   }
@@ -1241,6 +1242,8 @@ function setFanMode(isManual) {
 function applyFanSpeeds() {
   const m = Math.min(100, Math.max(0, parseInt(document.getElementById('fan-main-val').value)    || 0));
   const c = Math.min(100, Math.max(0, parseInt(document.getElementById('fan-cooling-val').value) || 0));
+  lockField('fan_main');    // prevent MQTT from overwriting inputs for 4 s
+  lockField('fan_cooling');
   publish('cmd/fan_main',    String(m));
   publish('cmd/fan_cooling', String(c));
   showToast('Fan speeds applied');
