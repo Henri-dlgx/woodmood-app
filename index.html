@@ -466,6 +466,11 @@
           <div class="side-opt active" id="fan-mode-auto"   onclick="setFanMode(false)">⚡ AUTO</div>
           <div class="side-opt"        id="fan-mode-manual" onclick="setFanMode(true)">✋ MANUAL</div>
         </div>
+        <div style="display:flex;gap:10px;justify-content:center;margin:2px 0 6px;font-size:.72rem;color:#888">
+          <span>Main&thinsp;<b id="fan-main-live" style="color:#5a2d0c;font-size:.82rem">—</b>%</span>
+          <span style="color:#ccc">|</span>
+          <span>Cool&thinsp;<b id="fan-cooling-live" style="color:#5a2d0c;font-size:.82rem">—</b>%</span>
+        </div>
         <div id="fan-manual-ctrls" class="tech-manual-block" style="display:none">
           <div>
             <div class="tech-field-lbl">Main Fan Speed (%)</div>
@@ -1187,6 +1192,9 @@ function applyTechState(d) {
     document.getElementById('fan-mode-manual').classList.toggle('active',  techFanManual);
     document.getElementById('fan-manual-ctrls').style.display = techFanManual ? 'flex' : 'none';
   }
+  // Live fan speed readout — always reflects actual firmware state
+  if (d.fan_main    !== undefined) document.getElementById('fan-main-live').textContent    = d.fan_main;
+  if (d.fan_cooling !== undefined) document.getElementById('fan-cooling-live').textContent = d.fan_cooling;
   // Only sync fan/setpoint inputs when the user is not typing in them
   // and no manual Set command is in flight (4 s lock after applyFanSpeeds).
   if (d.fan_main !== undefined && !isLocked('fan_main')) {
