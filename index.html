@@ -54,10 +54,13 @@
     #fault-banner{display:none;background:#c0392b;color:#fff;border-radius:18px;
       padding:18px;box-shadow:0 4px 20px rgba(0,0,0,.4)}
     #fault-banner.show{display:block}
-    .fault-title{font-size:1.05rem;font-weight:700;margin-bottom:10px}
-    .fault-steps{font-size:.86rem;line-height:1;margin-bottom:14px}
-    .fault-step{display:flex;gap:8px;padding:5px 0}
-    .fault-step-num{font-weight:700;min-width:20px;opacity:.8}
+    .fault-title{font-size:1.05rem;font-weight:700;margin-bottom:6px}
+    .fault-side-badge{display:inline-block;background:rgba(255,255,255,.2);border-radius:8px;padding:3px 10px;font-size:.8rem;font-weight:600;margin-bottom:8px;letter-spacing:.04em}
+    .fault-msg{font-size:.84rem;opacity:.85;margin-bottom:10px}
+    .btn-countdown{background:rgba(255,255,255,.2);color:#fff;border:2px solid rgba(255,255,255,.4);cursor:default;font-size:.95rem}
+    .fault-resolve-group{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+    .btn-resolve{background:#27ae60;font-size:1rem;font-weight:700}
+    .btn-reopen{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);font-size:.82rem}
 
     /* ── Buttons ── */
     .btn{border:none;border-radius:10px;font-size:.9rem;font-weight:600;
@@ -242,16 +245,28 @@
 
   <!-- ── Fault banner ── -->
   <div id="fault-banner">
-    <div class="fault-title" id="fault-title">⚠️ FAULT DETECTED</div>
-    <div id="fault-reason" style="font-size:.8rem;opacity:.8;margin-bottom:10px;display:none"></div>
-    <div class="fault-steps">
-      <div class="fault-step"><span class="fault-step-num">1.</span><span>🧤 Take glove and poker</span></div>
-      <div class="fault-step"><span class="fault-step-num">2.</span><span>🔓 Open door with the button below</span></div>
-      <div class="fault-step"><span class="fault-step-num">3.</span><span>🪵 Push log into the fire or remove it</span></div>
-      <div class="fault-step"><span class="fault-step-num">4.</span><span>🚪 Close the cartridge door</span></div>
-      <div class="fault-step"><span class="fault-step-num">5.</span><span>✅ Press Resolve Fault</span></div>
+    <div class="fault-title">⚠️ FAULT DETECTED</div>
+    <div class="fault-side-badge" id="fault-side-badge">— Side</div>
+    <div class="fault-msg" id="fault-msg-text">Log stuck in trapdoor — follow the steps below</div>
+    <!-- Phase 1: unlock door -->
+    <div id="fault-phase-1">
+      <button class="btn btn-orange btn-full" onclick="faultUnlockDoor()">
+        🔓 Unlock <span class="fault-side-name">—</span> Door
+      </button>
     </div>
-    <button class="btn btn-green btn-full" id="fault-action-btn" onclick="faultActionClick()">🔓 Unlock door</button>
+    <!-- Phase 2: countdown while door is held open -->
+    <div id="fault-phase-2" style="display:none">
+      <button class="btn btn-countdown btn-full" disabled>
+        Keep door open… <span id="fault-countdown">10</span>s
+      </button>
+    </div>
+    <!-- Phase 3: ready to resolve -->
+    <div id="fault-phase-3" style="display:none" class="fault-resolve-group">
+      <button class="btn btn-resolve btn-full" onclick="resolveFault()">✓ Resolve Fault</button>
+      <button class="btn btn-reopen btn-full" onclick="faultUnlockDoor()">
+        🔓 Unlock <span class="fault-side-name">—</span> Door Again
+      </button>
+    </div>
   </div>
 
   <!-- ── Temperature ── -->
@@ -604,9 +619,10 @@ let lastHbTime       = 0;
 let hbTimer          = null;
 let settingsOpen     = false;
 let systemState      = 'startup';   // startup | auto | cooldown | fault
-let faultSide        = null;        // 'l' | 'r'
-let faultActionPhase = 'unlock';    // 'unlock' | 'resolve'
-let faultDoorTimer   = null;
+let faultSide            = null;    // 'l' | 'r'
+let faultReady           = false;   // firmware signals fault can be resolved
+let faultCountdownActive = false;   // local 10-s countdown is running
+let faultCountdownTimer  = null;
 let insulation       = null;
 
 // Derived state tracking
@@ -743,7 +759,7 @@ function onMessage(topic, payloadBuf) {
   if (sub === 'status/full')       { try { applyFull(JSON.parse(payload)); } catch(e){} return; }
   if (sub === 'status/fault')      { setFault(payload === '1'); return; }
   if (sub === 'status/fault_msg')  { setFaultMsg(payload);      return; }
-  if (sub === 'status/fault_side') { faultSide = payload;       return; }
+  if (sub === 'status/fault_side') { faultSide = payload; if (faultActive) renderFaultPhase(); return; }
 
   if (sub === 'status/temperature') {
     stoveTemp = parseFloat(payload);
@@ -815,8 +831,7 @@ function applyFull(d) {
     document.getElementById('count-right').textContent = logR + ' logs';
   }
   if (d.system_active !== undefined) sysActive = !!d.system_active;
-  if (d.fault         !== undefined) setFault(d.fault);
-  if (d.fault_side    !== undefined) faultSide = d.fault_side;
+  if (d.fault !== undefined) setFault(d.fault, d.fault_side, d.fault_ready);
   if (d.system_state  !== undefined) { remoteStateReceived = true; if (!isLocked('system_state')) applySystemState(d.system_state); }
   if (d.uptime !== undefined) {
     const h = Math.floor(d.uptime/3600), m = Math.floor((d.uptime%3600)/60);
@@ -961,57 +976,93 @@ function sysButtonClick() {
 // ============================================================
 // FAULT
 // ============================================================
-function setFault(active) {
+function setFault(active, side, ready) {
   const wasActive = faultActive;
   faultActive = !!(active || active === '1' || active === true);
+  if (side  !== undefined && side  !== null) faultSide  = side;
+  if (ready !== undefined) faultReady = !!ready;
   const banner = document.getElementById('fault-banner');
   if (faultActive) {
     banner.classList.add('show');
     if (!wasActive) {
-      // Fresh fault — reset to unlock phase
-      faultActionPhase = 'unlock';
-      const btn = document.getElementById('fault-action-btn');
-      btn.textContent  = '🔓 Unlock door';
-      btn.className    = 'btn btn-green btn-full';
-      clearTimeout(faultDoorTimer);
+      // Fresh fault — reset to phase 1
+      clearFaultCountdown();
+      faultReady = false;
     }
-    // If already active, preserve current phase (don't reset every MQTT cycle)
+    renderFaultPhase();
   } else {
     banner.classList.remove('show');
-    faultActionPhase = 'unlock';   // reset for next fault
-    clearTimeout(faultDoorTimer);
-    const el = document.getElementById('fault-reason');
-    if (el) { el.style.display = 'none'; el.textContent = ''; }
+    clearFaultCountdown();
+    faultReady = false;
+    const el = document.getElementById('fault-msg-text');
+    if (el) el.textContent = 'Log stuck in trapdoor — follow the steps below';
   }
   updateSystemState();
 }
 
-function setFaultMsg(msg) {
-  if (!msg) return;
-  const lower = msg.toLowerCase();
-  const side  = lower.includes('right') ? 'Right' : lower.includes('left') ? 'Left' : null;
-  document.getElementById('fault-title').textContent =
-    side ? `⚠️ Fault — log stuck in trapdoor (${side})` : '⚠️ FAULT DETECTED';
-  const el = document.getElementById('fault-reason');
-  if (el && msg) { el.textContent = msg; el.style.display = 'block'; }
+function renderFaultPhase() {
+  const sideLabel = (faultSide === 'r') ? 'Right' : 'Left';
+  // Update side badge and all side-name spans
+  const badge = document.getElementById('fault-side-badge');
+  if (badge) badge.textContent = sideLabel + ' Side';
+  document.querySelectorAll('.fault-side-name').forEach(function(el) {
+    el.textContent = sideLabel;
+  });
+  const p1 = document.getElementById('fault-phase-1');
+  const p2 = document.getElementById('fault-phase-2');
+  const p3 = document.getElementById('fault-phase-3');
+  if (faultReady) {
+    // Phase 3: firmware confirmed ready to resolve
+    clearFaultCountdown();
+    p1.style.display = 'none';
+    p2.style.display = 'none';
+    p3.style.display = '';
+  } else if (faultCountdownActive) {
+    // Phase 2: local countdown running
+    p1.style.display = 'none';
+    p2.style.display = '';
+    p3.style.display = 'none';
+  } else {
+    // Phase 1: waiting for user to unlock door
+    p1.style.display = '';
+    p2.style.display = 'none';
+    p3.style.display = 'none';
+  }
 }
 
-function faultActionClick() {
-  if (faultActionPhase === 'unlock') {
-    publish('cmd/door_' + (faultSide || 'l'), '1');
-    // After 10 s the door has been open long enough → switch to resolve
-    faultDoorTimer = setTimeout(() => {
-      faultActionPhase = 'resolve';
-      const btn = document.getElementById('fault-action-btn');
-      btn.textContent = 'Resolve Fault';
-      btn.className   = 'btn btn-red btn-full';
-    }, 10000);
-  } else {
-    if (!confirm('Resolve fault and attempt motor recovery?')) return;
-    publish('cmd/resolve_fault', '1');
-    inCooldown = false;
-    setFault(false);
-  }
+function faultUnlockDoor() {
+  publish('cmd/door_' + (faultSide || 'l'), '1');
+  // Start 10-s local countdown (moves to phase 3 when done)
+  clearFaultCountdown();
+  faultCountdownActive = true;
+  let secs = 10;
+  document.getElementById('fault-countdown').textContent = secs;
+  renderFaultPhase();
+  faultCountdownTimer = setInterval(function() {
+    secs--;
+    document.getElementById('fault-countdown').textContent = secs;
+    if (secs <= 0) {
+      clearFaultCountdown();
+      faultReady = true;
+      renderFaultPhase();
+    }
+  }, 1000);
+}
+
+function clearFaultCountdown() {
+  clearInterval(faultCountdownTimer);
+  faultCountdownTimer  = null;
+  faultCountdownActive = false;
+}
+
+function resolveFault() {
+  publish('cmd/resolve_fault', '1');
+}
+
+function setFaultMsg(msg) {
+  if (!msg) return;
+  const el = document.getElementById('fault-msg-text');
+  if (el) el.textContent = msg;
 }
 
 // ============================================================
@@ -1164,13 +1215,11 @@ function applyTechState(d) {
     const mb = document.getElementById('manual-insert-btn');
     if (mb) mb.style.display = techAutoInsertOn ? 'none' : '';
   }
-  // fault_ready: firmware signals door is open and log can be resolved
-  if (d.fault_ready && faultActive && faultActionPhase === 'unlock') {
-    clearTimeout(faultDoorTimer);
-    faultActionPhase = 'resolve';
-    const btn = document.getElementById('fault-action-btn');
-    btn.textContent = '✅ Resolve Fault';
-    btn.className   = 'btn btn-red btn-full';
+  // fault_ready: firmware signals the fault can now be resolved
+  if (d.fault_ready !== undefined && faultActive) {
+    const wasReady = faultReady;
+    faultReady = !!d.fault_ready;
+    if (faultReady && !wasReady) renderFaultPhase();
   }
 }
 
