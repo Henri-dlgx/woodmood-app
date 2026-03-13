@@ -980,7 +980,7 @@ function setFault(active, side, ready) {
   const wasActive = faultActive;
   faultActive = !!(active || active === '1' || active === true);
   if (side  !== undefined && side  !== null) faultSide  = side;
-  if (ready !== undefined) faultReady = !!ready;
+  if (ready) faultReady = true;  // firmware can only SET faultReady, never clear it mid-fault
   const banner = document.getElementById('fault-banner');
   if (faultActive) {
     banner.classList.add('show');
@@ -1031,7 +1031,9 @@ function renderFaultPhase() {
 }
 
 function faultUnlockDoor() {
-  publish('cmd/door_' + (faultSide || 'l'), '1');
+  const side = faultSide || 'l';
+  publish('cmd/door_' + side, '1');
+  showToast('Unlocking ' + (side === 'r' ? 'Right' : 'Left') + ' door…');
   // Start 10-s local countdown (moves to phase 3 when done)
   clearFaultCountdown();
   faultCountdownActive = true;
@@ -1215,12 +1217,7 @@ function applyTechState(d) {
     const mb = document.getElementById('manual-insert-btn');
     if (mb) mb.style.display = techAutoInsertOn ? 'none' : '';
   }
-  // fault_ready: firmware signals the fault can now be resolved
-  if (d.fault_ready !== undefined && faultActive) {
-    const wasReady = faultReady;
-    faultReady = !!d.fault_ready;
-    if (faultReady && !wasReady) renderFaultPhase();
-  }
+  // fault_ready is now handled entirely by setFault() above; no override here
 }
 
 function setBeeperEn(enabled) {
