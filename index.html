@@ -306,7 +306,7 @@
         <div class="cart-count" id="count-left">—</div>
         <div class="cart-btn-stack">
           <button class="btn btn-green"  onclick="unlockDoor('l')">Unlock</button>
-          <button class="btn btn-orange" onclick="publish('cmd/motor_home','l')">Rewind</button>
+          <button class="btn btn-orange" onclick="publish('cmd/motor_home','r')">Rewind</button>
           <button class="btn btn-brown"  onclick="updateLogCount('l')">Update log count</button>
         </div>
       </div>
@@ -325,7 +325,7 @@
         <div class="cart-count" id="count-right">—</div>
         <div class="cart-btn-stack">
           <button class="btn btn-green"  onclick="unlockDoor('r')">Unlock</button>
-          <button class="btn btn-orange" onclick="publish('cmd/motor_home','r')">Rewind</button>
+          <button class="btn btn-orange" onclick="publish('cmd/motor_home','l')">Rewind</button>
           <button class="btn btn-brown"  onclick="updateLogCount('r')">Update log count</button>
         </div>
       </div>
@@ -547,7 +547,7 @@
         </div>
         <div class="row-btns">
           <button class="btn btn-gray" onclick="publish('cmd/motor_stop','1')">⏹ Stop</button>
-          <button class="btn btn-blue" onclick="publish('cmd/motor_home', techSide)">🏠 Home</button>
+          <button class="btn btn-blue" onclick="publish('cmd/motor_home', mapSide(techSide))">🏠 Home</button>
         </div>
       </div>
 
@@ -778,15 +778,17 @@ function onMessage(topic, payloadBuf) {
     updateBleRoomTemp(); return;
   }
   if (sub === 'status/log_level_l') {
-    logL = parseInt(payload) || 0;
-    renderBars('left', logL);
-    document.getElementById('count-left').textContent = logL + ' logs';
-    calcBurnTime(); return;
-  }
-  if (sub === 'status/log_level_r') {
+    // firmware 'l' = physical right — show on right column
     logR = parseInt(payload) || 0;
     renderBars('right', logR);
     document.getElementById('count-right').textContent = logR + ' logs';
+    calcBurnTime(); return;
+  }
+  if (sub === 'status/log_level_r') {
+    // firmware 'r' = physical left — show on left column
+    logL = parseInt(payload) || 0;
+    renderBars('left', logL);
+    document.getElementById('count-left').textContent = logL + ' logs';
     calcBurnTime(); return;
   }
   if (sub === 'status/system_state') {
@@ -826,14 +828,16 @@ function applyFull(d) {
     updateBleRoomTemp();
   }
   if (d.log_l !== undefined) {
-    logL = parseInt(d.log_l) || 0;
-    renderBars('left',  logL);
-    document.getElementById('count-left').textContent = logL + ' logs';
-  }
-  if (d.log_r !== undefined) {
-    logR = parseInt(d.log_r) || 0;
+    // firmware 'l' = physical right — show on right column
+    logR = parseInt(d.log_l) || 0;
     renderBars('right', logR);
     document.getElementById('count-right').textContent = logR + ' logs';
+  }
+  if (d.log_r !== undefined) {
+    // firmware 'r' = physical left — show on left column
+    logL = parseInt(d.log_r) || 0;
+    renderBars('left',  logL);
+    document.getElementById('count-left').textContent = logL + ' logs';
   }
   if (d.system_active !== undefined) sysActive = !!d.system_active;
   if (d.fault !== undefined) setFault(d.fault, d.fault_side, d.fault_ready);
@@ -1010,7 +1014,8 @@ function setFault(active, side, ready) {
 }
 
 function renderFaultPhase() {
-  const sideLabel = (faultSide === 'r') ? 'Right' : 'Left';
+  // firmware 'r' = physical left, firmware 'l' = physical right
+  const sideLabel = (faultSide === 'r') ? 'Left' : 'Right';
   // Update side badge and all side-name spans
   const badge = document.getElementById('fault-side-badge');
   if (badge) badge.textContent = sideLabel + ' Side';
@@ -1042,7 +1047,8 @@ function renderFaultPhase() {
 function faultUnlockDoor() {
   const side = faultSide || 'l';
   publish('cmd/door_' + side, '1');
-  showToast('Unlocking ' + (side === 'r' ? 'Right' : 'Left') + ' door…');
+  // firmware 'r' = physical left, firmware 'l' = physical right
+  showToast('Unlocking ' + (side === 'r' ? 'Left' : 'Right') + ' door…');
   // Start 10-s local countdown (moves to phase 3 when done)
   clearFaultCountdown();
   faultCountdownActive = true;
@@ -1098,6 +1104,9 @@ function publish(subtopic, payload) {
   client.publish(prefix + '/' + subtopic, String(payload), { qos:1 });
 }
 
+// App left/right labels are mirrored vs firmware — swap every side before sending
+function mapSide(s) { return s === 'l' ? 'r' : 'l'; }
+
 function adjustRoom(delta) {
   roomTemp = Math.min(26, Math.max(18, (isNaN(roomTemp) ? 20 : roomTemp) + delta));
   document.getElementById('room-val').textContent = roomTemp + '°';
@@ -1106,7 +1115,7 @@ function adjustRoom(delta) {
 
 function unlockDoor(side) {
   if (!confirm('Unlock ' + (side==='l'?'LEFT':'RIGHT') + ' door?')) return;
-  publish('cmd/door_' + side, '1');
+  publish('cmd/door_' + mapSide(side), '1');
 }
 
 function updateLogCount(side) {
@@ -1116,7 +1125,7 @@ function updateLogCount(side) {
   if (val === null) return;
   const n = Math.min(6, Math.max(0, parseInt(val) || 0));
   if (side === 'l') logL = n; else logR = n;
-  publish('cmd/log_level_' + side, n);
+  publish('cmd/log_level_' + mapSide(side), n);
   renderBars(side === 'l' ? 'left' : 'right', n);
   document.getElementById(id).textContent = n + ' logs';
   calcBurnTime();
@@ -1142,7 +1151,7 @@ function calcBurnTime() {
 // ============================================================
 function simulateInsertion() {
   if (!confirm('Trigger a real insertion sequence on the stove?')) return;
-  publish('cmd/insert', techSide);
+  publish('cmd/insert', mapSide(techSide));
   showToast('Insertion triggered — ' + (techSide === 'l' ? 'Left' : 'Right') + ' side');
 }
 
@@ -1167,12 +1176,12 @@ function selectSide(s) {
 }
 
 function techUnlockDoor() {
-  publish('cmd/door_' + techSide, '1');
+  publish('cmd/door_' + mapSide(techSide), '1');
   showToast('Unlocking ' + (techSide === 'l' ? 'Left' : 'Right') + ' door…');
 }
 
 function techRewind() {
-  publish('cmd/motor_home', techSide);
+  publish('cmd/motor_home', mapSide(techSide));
   showToast('Rewinding ' + (techSide === 'l' ? 'Left' : 'Right') + ' cartridge…');
 }
 
@@ -1294,14 +1303,14 @@ function applyMaxTemp() {
 function techMotor(dir) {
   const steps = parseInt(document.getElementById('motor-steps').value) || 200;
   // Payload format: "<side>:<steps>"  e.g. "l:200"
-  publish('cmd/motor_' + dir, techSide + ':' + String(steps));
+  publish('cmd/motor_' + dir, mapSide(techSide) + ':' + String(steps));
   const sideName = techSide === 'l' ? 'Left' : 'Right';
   showToast('Motor ' + dir + ' — ' + steps + ' steps (' + sideName + ')');
 }
 
 function techPiston(action) {
-  // Payload: techSide — "l" or "r" — so firmware knows which side to operate
-  publish('cmd/piston_' + action, techSide);
+  // Payload: mapped side — so firmware knows which physical side to operate
+  publish('cmd/piston_' + action, mapSide(techSide));
   const labels = { extend:'Extend', retract:'Retract', stop:'Stop', tare:'Tare' };
   const sideName = techSide === 'l' ? 'Left' : 'Right';
   showToast('Piston ' + (labels[action] || action) + ' — ' + sideName);
@@ -1310,7 +1319,7 @@ function techPiston(action) {
 function techInsert() {
   const sideName = techSide === 'l' ? 'Left' : 'Right';
   if (!confirm('Trigger insertion on the ' + sideName + ' side?')) return;
-  publish('cmd/insert', techSide);
+  publish('cmd/insert', mapSide(techSide));
   showToast('Insertion triggered — ' + sideName + ' side');
 }
 
