@@ -665,6 +665,10 @@ function isLocked(f)  { return !!(pendingCmds[f] && Date.now() < pendingCmds[f])
 // ============================================================
 window.addEventListener('load', () => {
   loadSettings();
+  // Restore last known wanted temp from localStorage so the display is never
+  // wrong on a fresh page load (before the first MQTT status arrives).
+  const savedRoom = parseInt(localStorage.getItem('woodmood_room_temp'));
+  if (savedRoom >= 18 && savedRoom <= 26) roomTemp = savedRoom;
   if (cfg.broker && cfg.user && cfg.pass && cfg.serial) {
     fillForm();
     document.getElementById('conn-card').style.display = 'none';
@@ -849,6 +853,16 @@ function applyFull(d) {
     logL = parseInt(d.log_r) || 0;
     renderBars('left',  logL);
     document.getElementById('count-left').textContent = logL + ' logs';
+  }
+  // Sync wanted room temp from firmware echo — keeps all clients in sync.
+  // Skipped for 4 s after the local user taps +/- to avoid rubber-banding.
+  if (d.room_setpoint !== undefined && !isLocked('room_temp')) {
+    const r = parseInt(d.room_setpoint);
+    if (r >= 18 && r <= 26 && r !== roomTemp) {
+      roomTemp = r;
+      document.getElementById('room-val').textContent = roomTemp + '°';
+      localStorage.setItem('woodmood_room_temp', roomTemp);
+    }
   }
   if (d.system_active !== undefined) sysActive = !!d.system_active;
   if (d.fault !== undefined) setFault(d.fault, d.fault_side, d.fault_ready);
@@ -1121,6 +1135,8 @@ function mapSide(s) { return s === 'l' ? 'r' : 'l'; }
 function adjustRoom(delta) {
   roomTemp = Math.min(26, Math.max(18, (isNaN(roomTemp) ? 20 : roomTemp) + delta));
   document.getElementById('room-val').textContent = roomTemp + '°';
+  localStorage.setItem('woodmood_room_temp', roomTemp);
+  lockField('room_temp');   // prevent MQTT echo from overwriting immediately after a tap
   publish('cmd/room_temp', roomTemp);
 }
 
