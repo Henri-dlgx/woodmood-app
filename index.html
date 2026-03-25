@@ -532,6 +532,17 @@
             <button class="btn btn-brown btn-sm" style="flex:none" onclick="applyMaxTemp()">Set</button>
           </div>
         </div>
+        <div class="toggle-wrap" style="margin-top:12px">
+          <span class="toggle-label">🍃 Eco Mode <span style="font-size:.75rem;color:rgba(255,255,255,.55);font-weight:400">(51% floor)</span></span>
+          <label class="tgl"><input type="checkbox" id="tog-eco-mode" onchange="setEcoMode(this.checked)"><span class="tgl-sl"></span></label>
+        </div>
+        <div id="normal-floor-row" style="display:none;margin-top:10px">
+          <div class="tech-field-lbl">Normal mode cruise floor (%)</div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="normal-floor-val" class="tech-input" type="number" min="0" max="70" value="65" style="flex:1">
+            <button class="btn btn-brown btn-sm" style="flex:none" onclick="applyNormalFloor()">Set</button>
+          </div>
+        </div>
       </div>
 
       <hr class="divider">
@@ -1233,6 +1244,14 @@ function applyTechState(d) {
     const el = document.getElementById('max-temp-threshold');
     if (el !== focused) el.value = d.max_temp_val;
   }
+  if (d.eco_mode !== undefined && !isLocked('eco_mode')) {
+    document.getElementById('tog-eco-mode').checked = !!d.eco_mode;
+    document.getElementById('normal-floor-row').style.display = d.eco_mode ? 'none' : 'block';
+  }
+  if (d.norm_floor !== undefined) {
+    const el = document.getElementById('normal-floor-val');
+    if (el !== focused) el.value = d.norm_floor;
+  }
   if (d.auto_insert !== undefined && !isLocked('auto_insert')) {
     techAutoInsertOn = !!d.auto_insert;
     document.getElementById('tog-auto-insert').checked = techAutoInsertOn;
@@ -1298,6 +1317,19 @@ function applyMaxTemp() {
   const val = parseInt(document.getElementById('max-temp-threshold').value) || 500;
   publish('cmd/max_temp_val', String(val));
   showToast('Max temp threshold \u2192 ' + val + '\u00b0C');
+}
+
+function setEcoMode(enabled) {
+  lockField('eco_mode');
+  publish('cmd/eco_mode', enabled ? '1' : '0');
+  document.getElementById('normal-floor-row').style.display = enabled ? 'none' : 'block';
+  showToast('Eco mode ' + (enabled ? 'ON \uD83C\uDF3F' : 'OFF'));
+}
+
+function applyNormalFloor() {
+  const val = Math.min(70, Math.max(0, parseInt(document.getElementById('normal-floor-val').value) || 65));
+  publish('cmd/normal_floor', String(val));
+  showToast('Normal cruise floor \u2192 ' + val + '%');
 }
 
 function techMotor(dir) {
