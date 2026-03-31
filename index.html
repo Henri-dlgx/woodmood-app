@@ -798,17 +798,15 @@ function onMessage(topic, payloadBuf) {
     updateBleRoomTemp(); return;
   }
   if (sub === 'status/log_level_l') {
-    // firmware 'l' = physical right — show on right column
-    logR = parseInt(payload) || 0;
-    renderBars('right', logR);
-    document.getElementById('count-right').textContent = logR + ' logs';
-    calcBurnTime(); return;
-  }
-  if (sub === 'status/log_level_r') {
-    // firmware 'r' = physical left — show on left column
     logL = parseInt(payload) || 0;
     renderBars('left', logL);
     document.getElementById('count-left').textContent = logL + ' logs';
+    calcBurnTime(); return;
+  }
+  if (sub === 'status/log_level_r') {
+    logR = parseInt(payload) || 0;
+    renderBars('right', logR);
+    document.getElementById('count-right').textContent = logR + ' logs';
     calcBurnTime(); return;
   }
   if (sub === 'status/system_state') {
@@ -848,16 +846,14 @@ function applyFull(d) {
     updateBleRoomTemp();
   }
   if (d.log_l !== undefined) {
-    // firmware 'l' = physical right — show on right column
-    logR = parseInt(d.log_l) || 0;
-    renderBars('right', logR);
-    document.getElementById('count-right').textContent = logR + ' logs';
+    logL = parseInt(d.log_l) || 0;
+    renderBars('left', logL);
+    document.getElementById('count-left').textContent = logL + ' logs';
   }
   if (d.log_r !== undefined) {
-    // firmware 'r' = physical left — show on left column
-    logL = parseInt(d.log_r) || 0;
-    renderBars('left',  logL);
-    document.getElementById('count-left').textContent = logL + ' logs';
+    logR = parseInt(d.log_r) || 0;
+    renderBars('right', logR);
+    document.getElementById('count-right').textContent = logR + ' logs';
   }
   // Sync wanted room temp from firmware echo — keeps all clients in sync.
   // Skipped for 4 s after the local user taps +/- to avoid rubber-banding.
@@ -1044,8 +1040,7 @@ function setFault(active, side, ready) {
 }
 
 function renderFaultPhase() {
-  // firmware 'r' = physical left, firmware 'l' = physical right
-  const sideLabel = (faultSide === 'r') ? 'Left' : 'Right';
+  const sideLabel = (faultSide === 'r') ? 'Right' : 'Left';
   // Update side badge and all side-name spans
   const badge = document.getElementById('fault-side-badge');
   if (badge) badge.textContent = sideLabel + ' Side';
