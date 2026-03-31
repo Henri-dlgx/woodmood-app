@@ -306,7 +306,7 @@
         <div class="cart-count" id="count-left">—</div>
         <div class="cart-btn-stack">
           <button class="btn btn-green"  onclick="unlockDoor('l')">Unlock</button>
-          <button class="btn btn-orange" onclick="publish('cmd/motor_home','l')">Rewind</button>
+          <button class="btn btn-orange" onclick="publish('cmd/motor_home',mapSide('l'))">Rewind</button>
           <button class="btn btn-brown"  onclick="updateLogCount('l')">Update log count</button>
         </div>
       </div>
@@ -325,7 +325,7 @@
         <div class="cart-count" id="count-right">—</div>
         <div class="cart-btn-stack">
           <button class="btn btn-green"  onclick="unlockDoor('r')">Unlock</button>
-          <button class="btn btn-orange" onclick="publish('cmd/motor_home','r')">Rewind</button>
+          <button class="btn btn-orange" onclick="publish('cmd/motor_home',mapSide('r'))">Rewind</button>
           <button class="btn btn-brown"  onclick="updateLogCount('r')">Update log count</button>
         </div>
       </div>
@@ -620,6 +620,11 @@
 </div>
 
 <script>
+// ============================================================
+// CONFIGURATION
+// ============================================================
+const SWAP_SIDES = false;   // true = swap left/right relative to firmware, false = no swap
+
 // ============================================================
 // STATE
 // ============================================================
@@ -1129,8 +1134,7 @@ function publish(subtopic, payload) {
   client.publish(prefix + '/' + subtopic, String(payload), { qos:1 });
 }
 
-// App left/right labels are mirrored vs firmware — swap every side before sending
-function mapSide(s) { return s === 'l' ? 'r' : 'l'; }
+function mapSide(s) { return SWAP_SIDES ? (s === 'l' ? 'r' : 'l') : s; }
 
 function adjustRoom(delta) {
   roomTemp = Math.min(26, Math.max(18, (isNaN(roomTemp) ? 20 : roomTemp) + delta));
