@@ -493,7 +493,7 @@
           <span class="toggle-label">Auto Insertion</span>
           <label class="tgl"><input type="checkbox" id="tog-auto-insert" onchange="setAutoInsertEn(this.checked)"><span class="tgl-sl"></span></label>
         </div>
-        <button class="btn btn-red btn-full" id="manual-insert-btn" style="margin-top:12px" onclick="techInsert()">▶▶ Manually Insert Log</button>
+        <button class="btn btn-red btn-full" id="manual-insert-btn" style="margin-top:12px;display:none" onclick="techInsert()">▶▶ Manually Insert Log</button>
       </div>
 
       <hr class="divider">
@@ -1072,8 +1072,7 @@ function renderFaultPhase() {
 function faultUnlockDoor() {
   const side = faultSide || 'l';
   publish('cmd/door_' + side, '1');
-  // firmware 'r' = physical left, firmware 'l' = physical right
-  showToast('Unlocking ' + (side === 'r' ? 'Left' : 'Right') + ' door…');
+  showToast('Unlocking ' + (side === 'r' ? 'Right' : 'Left') + ' door…');
   // Start 10-s local countdown (moves to phase 3 when done)
   clearFaultCountdown();
   faultCountdownActive = true;
