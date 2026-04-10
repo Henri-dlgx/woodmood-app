@@ -132,7 +132,7 @@
     .alert-row{display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center;
       padding:10px;background:#f9f5f1;border-radius:10px}
     .alert-fields{display:flex;flex-direction:column;gap:5px}
-    .alert-fields input{padding:7px 10px;border:1px solid #d0b08a;border-radius:7px;
+    .alert-fields input,.alert-fields select{padding:7px 10px;border:1px solid #d0b08a;border-radius:7px;
       font-size:.84rem;width:100%}
     .alert-fields input:focus{outline:none;border-color:#8B4513}
     input[type=checkbox]{width:19px;height:19px;accent-color:#8B4513;cursor:pointer;
@@ -350,21 +350,60 @@
           <div class="alert-row">
             <div class="alert-fields">
               <input type="email" id="alert-email-1" placeholder="Email address"/>
-              <input type="tel"   id="alert-phone-1" placeholder="Phone  e.g. +1 234 567 890"/>
+              <select id="alert-op-1" onchange="onAlertOpChange(1)">
+                <option value="0">No SMS</option>
+                <option value="1">Orange</option>
+                <option value="2">SFR</option>
+                <option value="3">Bouygues</option>
+                <option value="4">Free Mobile</option>
+              </select>
+              <div id="alert-phone-wrap-1" style="display:none;">
+                <input type="tel" id="alert-phone-1" placeholder="Phone (e.g. 0612345678)" style="width:100%;box-sizing:border-box;"/>
+              </div>
+              <div id="alert-free-wrap-1" style="display:none;">
+                <input type="text"     id="alert-free-uid-1" placeholder="Free subscriber ID" style="width:100%;box-sizing:border-box;margin-bottom:4px;"/>
+                <input type="password" id="alert-free-key-1" placeholder="Free API key"       style="width:100%;box-sizing:border-box;"/>
+              </div>
             </div>
             <input type="checkbox" id="alert-en-1" checked/>
           </div>
           <div class="alert-row">
             <div class="alert-fields">
               <input type="email" id="alert-email-2" placeholder="Email address"/>
-              <input type="tel"   id="alert-phone-2" placeholder="Phone  e.g. +1 234 567 890"/>
+              <select id="alert-op-2" onchange="onAlertOpChange(2)">
+                <option value="0">No SMS</option>
+                <option value="1">Orange</option>
+                <option value="2">SFR</option>
+                <option value="3">Bouygues</option>
+                <option value="4">Free Mobile</option>
+              </select>
+              <div id="alert-phone-wrap-2" style="display:none;">
+                <input type="tel" id="alert-phone-2" placeholder="Phone (e.g. 0612345678)" style="width:100%;box-sizing:border-box;"/>
+              </div>
+              <div id="alert-free-wrap-2" style="display:none;">
+                <input type="text"     id="alert-free-uid-2" placeholder="Free subscriber ID" style="width:100%;box-sizing:border-box;margin-bottom:4px;"/>
+                <input type="password" id="alert-free-key-2" placeholder="Free API key"       style="width:100%;box-sizing:border-box;"/>
+              </div>
             </div>
             <input type="checkbox" id="alert-en-2"/>
           </div>
           <div class="alert-row">
             <div class="alert-fields">
               <input type="email" id="alert-email-3" placeholder="Email address"/>
-              <input type="tel"   id="alert-phone-3" placeholder="Phone  e.g. +1 234 567 890"/>
+              <select id="alert-op-3" onchange="onAlertOpChange(3)">
+                <option value="0">No SMS</option>
+                <option value="1">Orange</option>
+                <option value="2">SFR</option>
+                <option value="3">Bouygues</option>
+                <option value="4">Free Mobile</option>
+              </select>
+              <div id="alert-phone-wrap-3" style="display:none;">
+                <input type="tel" id="alert-phone-3" placeholder="Phone (e.g. 0612345678)" style="width:100%;box-sizing:border-box;"/>
+              </div>
+              <div id="alert-free-wrap-3" style="display:none;">
+                <input type="text"     id="alert-free-uid-3" placeholder="Free subscriber ID" style="width:100%;box-sizing:border-box;margin-bottom:4px;"/>
+                <input type="password" id="alert-free-key-3" placeholder="Free API key"       style="width:100%;box-sizing:border-box;"/>
+              </div>
             </div>
             <input type="checkbox" id="alert-en-3"/>
           </div>
@@ -799,14 +838,14 @@ function onMessage(topic, payloadBuf) {
   }
   if (sub === 'status/log_level_l') {
     logL = parseInt(payload) || 0;
-    renderBars('left', logL);
-    document.getElementById('count-left').textContent = logL + ' logs';
+    renderBars('right', logL);
+    document.getElementById('count-right').textContent = logL + ' logs';
     calcBurnTime(); return;
   }
   if (sub === 'status/log_level_r') {
     logR = parseInt(payload) || 0;
-    renderBars('right', logR);
-    document.getElementById('count-right').textContent = logR + ' logs';
+    renderBars('left', logR);
+    document.getElementById('count-left').textContent = logR + ' logs';
     calcBurnTime(); return;
   }
   if (sub === 'status/system_state') {
@@ -847,13 +886,13 @@ function applyFull(d) {
   }
   if (d.log_l !== undefined) {
     logL = parseInt(d.log_l) || 0;
-    renderBars('left', logL);
-    document.getElementById('count-left').textContent = logL + ' logs';
+    renderBars('right', logL);
+    document.getElementById('count-right').textContent = logL + ' logs';
   }
   if (d.log_r !== undefined) {
     logR = parseInt(d.log_r) || 0;
-    renderBars('right', logR);
-    document.getElementById('count-right').textContent = logR + ' logs';
+    renderBars('left', logR);
+    document.getElementById('count-left').textContent = logR + ' logs';
   }
   // Sync wanted room temp from firmware echo — keeps all clients in sync.
   // Skipped for 4 s after the local user taps +/- to avoid rubber-banding.
@@ -1419,12 +1458,22 @@ function applyHeap(freeB, minFreeB, maxAllocB) {
 // ============================================================
 // SETTINGS — ALERTS
 // ============================================================
+function onAlertOpChange(i) {
+  const op = parseInt(document.getElementById('alert-op-' + i).value);
+  document.getElementById('alert-phone-wrap-' + i).style.display = (op > 0 && op < 4) ? 'block' : 'none';
+  document.getElementById('alert-free-wrap-'  + i).style.display = (op === 4)          ? 'block' : 'none';
+}
+
 function loadSettings() {
   const alerts = JSON.parse(localStorage.getItem(LS_ALERTS) || '{}');
   for (let i = 1; i <= 3; i++) {
-    if (alerts['email'+i] !== undefined) document.getElementById('alert-email-'+i).value   = alerts['email'+i];
-    if (alerts['phone'+i] !== undefined) document.getElementById('alert-phone-'+i).value   = alerts['phone'+i];
-    if (alerts['en'+i]    !== undefined) document.getElementById('alert-en-'+i).checked     = alerts['en'+i];
+    if (alerts['email'+i]   !== undefined) document.getElementById('alert-email-'+i).value      = alerts['email'+i];
+    if (alerts['op'+i]      !== undefined) document.getElementById('alert-op-'+i).value         = alerts['op'+i];
+    if (alerts['phone'+i]   !== undefined) document.getElementById('alert-phone-'+i).value      = alerts['phone'+i];
+    if (alerts['freeUid'+i] !== undefined) document.getElementById('alert-free-uid-'+i).value   = alerts['freeUid'+i];
+    if (alerts['freeKey'+i] !== undefined) document.getElementById('alert-free-key-'+i).value   = alerts['freeKey'+i];
+    if (alerts['en'+i]      !== undefined) document.getElementById('alert-en-'+i).checked        = alerts['en'+i];
+    onAlertOpChange(i); // apply show/hide based on loaded operator
   }
   const house = JSON.parse(localStorage.getItem(LS_HOUSE) || '{}');
   if (house.size)       document.getElementById('house-size').value = house.size;
@@ -1435,9 +1484,13 @@ function saveAlerts() {
   const alerts = {};
   let anyEnabled = false;
   for (let i = 1; i <= 3; i++) {
-    alerts['email'+i] = document.getElementById('alert-email-'+i).value.trim();
-    alerts['phone'+i] = document.getElementById('alert-phone-'+i).value.trim();
-    alerts['en'+i]    = document.getElementById('alert-en-'+i).checked;
+    const op = parseInt(document.getElementById('alert-op-'+i).value);
+    alerts['email'+i]   = document.getElementById('alert-email-'+i).value.trim();
+    alerts['op'+i]      = op;
+    alerts['phone'+i]   = (op > 0 && op < 4) ? document.getElementById('alert-phone-'+i).value.trim() : '';
+    alerts['freeUid'+i] = (op === 4)          ? document.getElementById('alert-free-uid-'+i).value.trim() : '';
+    alerts['freeKey'+i] = (op === 4)          ? document.getElementById('alert-free-key-'+i).value.trim() : '';
+    alerts['en'+i]      = document.getElementById('alert-en-'+i).checked;
     if (alerts['en'+i]) anyEnabled = true;
   }
   if (!anyEnabled) { alert('At least one alert must be enabled.'); return; }
