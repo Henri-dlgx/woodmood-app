@@ -838,14 +838,14 @@ function onMessage(topic, payloadBuf) {
   }
   if (sub === 'status/log_level_l') {
     logL = parseInt(payload) || 0;
-    renderBars('right', logL);
-    document.getElementById('count-right').textContent = logL + ' logs';
+    renderBars('left', logL);
+    document.getElementById('count-left').textContent = logL + ' logs';
     calcBurnTime(); return;
   }
   if (sub === 'status/log_level_r') {
     logR = parseInt(payload) || 0;
-    renderBars('left', logR);
-    document.getElementById('count-left').textContent = logR + ' logs';
+    renderBars('right', logR);
+    document.getElementById('count-right').textContent = logR + ' logs';
     calcBurnTime(); return;
   }
   if (sub === 'status/system_state') {
@@ -886,13 +886,13 @@ function applyFull(d) {
   }
   if (d.log_l !== undefined) {
     logL = parseInt(d.log_l) || 0;
-    renderBars('right', logL);
-    document.getElementById('count-right').textContent = logL + ' logs';
+    renderBars('left', logL);
+    document.getElementById('count-left').textContent = logL + ' logs';
   }
   if (d.log_r !== undefined) {
     logR = parseInt(d.log_r) || 0;
-    renderBars('left', logR);
-    document.getElementById('count-left').textContent = logR + ' logs';
+    renderBars('right', logR);
+    document.getElementById('count-right').textContent = logR + ' logs';
   }
   // Sync wanted room temp from firmware echo — keeps all clients in sync.
   // Skipped for 4 s after the local user taps +/- to avoid rubber-banding.
@@ -1189,7 +1189,7 @@ function updateLogCount(side) {
   if (val === null) return;
   const n = Math.min(6, Math.max(0, parseInt(val) || 0));
   if (side === 'l') logL = n; else logR = n;
-  publish('cmd/log_level_' + (side === 'l' ? 'r' : 'l'), n);
+  publish('cmd/log_level_' + mapSide(side), n);
   renderBars(side === 'l' ? 'left' : 'right', n);
   document.getElementById(id).textContent = n + ' logs';
   calcBurnTime();
