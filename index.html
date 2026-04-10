@@ -1151,7 +1151,7 @@ function updateLogCount(side) {
   if (val === null) return;
   const n = Math.min(6, Math.max(0, parseInt(val) || 0));
   if (side === 'l') logL = n; else logR = n;
-  publish('cmd/log_level_' + mapSide(side), n);
+  publish('cmd/log_level_' + (side === 'l' ? 'r' : 'l'), n);
   renderBars(side === 'l' ? 'left' : 'right', n);
   document.getElementById(id).textContent = n + ' logs';
   calcBurnTime();
