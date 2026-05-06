@@ -194,6 +194,13 @@
       font-size:.6rem;padding:1px 7px;margin-left:7px;vertical-align:middle;letter-spacing:.03em}
     .gap-col{display:flex;flex-direction:column;gap:8px}
 
+    /* ── Silence mode ── */
+    .silence-ctrl{display:flex;align-items:center;gap:8px}
+    .silence-icon{font-size:1.3rem;line-height:1;opacity:.4;transition:opacity .2s,filter .2s;filter:grayscale(1)}
+    .silence-icon.active{opacity:1;filter:none}
+    .silence-ctrl .tgl-sl{background:rgba(255,255,255,.25)}
+    #silence-toggle:checked + .tgl-sl{background:#c0392b}
+
     /* ── Toast ── */
     #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
       background:#2b1a0e;color:#f0d9c0;padding:10px 20px;border-radius:20px;
@@ -220,9 +227,15 @@
   <!-- ── Header ── -->
   <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 2px">
     <div class="logo">WoodMood</div>
-    <div class="status-badge" onclick="toggleConnPanel()">
-      <div class="status-dot" id="status-dot"></div>
-      <span id="status-label">Disconnected</span>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="silence-ctrl" title="Silence mode — pauses log insertions">
+        <span class="silence-icon" id="silence-icon">🤫</span>
+        <label class="tgl"><input type="checkbox" id="silence-toggle" onchange="setSilenceMode(this.checked)"><span class="tgl-sl"></span></label>
+      </div>
+      <div class="status-badge" onclick="toggleConnPanel()">
+        <div class="status-dot" id="status-dot"></div>
+        <span id="status-label">Disconnected</span>
+      </div>
     </div>
   </div>
 
@@ -677,6 +690,7 @@ let prefix           = '';
 let roomTemp         = 20;
 let lastHbTime       = 0;
 let hbTimer          = null;
+let offlineTimer     = null;
 let settingsOpen     = false;
 let systemState      = 'startup';   // startup | auto | cooldown | fault
 let faultSide            = null;    // 'l' | 'r'
@@ -768,6 +782,8 @@ function connect() {
 
   client.on('connect', () => {
     setDotState('connected');   // orange — waiting for heartbeat
+    clearTimeout(offlineTimer);
+    offlineTimer = null;
     document.getElementById('offline-overlay').classList.remove('show');
     client.subscribe(prefix + '/status/#');
   });
@@ -801,7 +817,11 @@ function setDotState(s) {
 }
 
 function showOffline() {
-  if (lastHbTime > 0) document.getElementById('offline-overlay').classList.add('show');
+  if (lastHbTime === 0 || offlineTimer) return;
+  offlineTimer = setTimeout(() => {
+    offlineTimer = null;
+    document.getElementById('offline-overlay').classList.add('show');
+  }, 5000);
 }
 
 // ============================================================
@@ -1311,7 +1331,19 @@ function applyTechState(d) {
     const mb = document.getElementById('manual-insert-btn');
     if (mb) mb.style.display = techAutoInsertOn ? 'none' : '';
   }
+  if (d.silence_mode !== undefined && !isLocked('silence_mode')) {
+    const on = !!d.silence_mode;
+    document.getElementById('silence-toggle').checked = on;
+    document.getElementById('silence-icon').classList.toggle('active', on);
+  }
   // fault_ready is now handled entirely by setFault() above; no override here
+}
+
+function setSilenceMode(on) {
+  lockField('silence_mode');
+  publish('cmd/silence', on ? '1' : '0');
+  document.getElementById('silence-icon').classList.toggle('active', on);
+  showToast(on ? 'Silence mode ON — insertions paused' : 'Silence mode OFF');
 }
 
 function setBeeperEn(enabled) {
