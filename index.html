@@ -194,6 +194,12 @@
       font-size:.6rem;padding:1px 7px;margin-left:7px;vertical-align:middle;letter-spacing:.03em}
     .gap-col{display:flex;flex-direction:column;gap:8px}
 
+    /* ── Temperature Schedule ── */
+    .sched-pt{cursor:ns-resize}
+    .sched-badge{font-size:.62rem;font-weight:700;color:#8B4513;background:rgba(139,69,19,.1);
+      border-radius:20px;padding:1px 7px;margin-top:3px;display:none;letter-spacing:.02em}
+    .sched-badge.active{display:inline-block}
+
     /* ── Silence mode ── */
     .silence-ctrl{display:flex;align-items:center;gap:8px}
     .silence-icon{font-size:1.3rem;line-height:1;opacity:.4;transition:opacity .2s,filter .2s;filter:grayscale(1)}
@@ -297,6 +303,7 @@
           <button class="adj-btn" onclick="adjustRoom(+1)">+</button>
         </div>
         <div class="temp-small-label">Wanted temperature</div>
+        <div class="sched-badge" id="sched-badge">📅 Scheduled</div>
       </div>
     </div>
     <!-- Secondary: stove internals (de-emphasised) -->
@@ -474,6 +481,27 @@
       <!-- Disconnect -->
       <button class="btn btn-gray btn-full" onclick="disconnect()">Disconnect</button>
 
+    </div>
+  </div>
+
+  <!-- ── Options ── -->
+  <div class="card">
+    <div class="settings-toggle" onclick="toggleOptions()">
+      <span style="font-weight:700;color:#8B4513">Options</span>
+      <span class="arrow" id="options-arrow">▼</span>
+    </div>
+    <div class="settings-body" id="options-body">
+      <div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <span style="font-size:.85rem;font-weight:600;color:#5a3015">Enable Schedule</span>
+          <label class="tgl"><input type="checkbox" id="tog-sched-enable" onchange="setSchedEnabled(this.checked)"><span class="tgl-sl"></span></label>
+        </div>
+        <div class="settings-section">Temperature Schedule</div>
+        <div style="font-size:.78rem;color:#888;margin-bottom:10px">Drag points to set target temperature per 2-hour block (18–24°C)</div>
+        <svg id="schedule-svg" width="100%" viewBox="0 0 320 155" style="display:block;touch-action:none;overflow:visible"></svg>
+        <div id="sched-status" style="font-size:.78rem;color:#8B4513;margin-top:8px;text-align:center;min-height:1.2em"></div>
+        <button class="btn btn-brown btn-sm btn-full" style="margin-top:8px" onclick="saveSchedule()">Save &amp; Apply Schedule</button>
+      </div>
     </div>
   </div>
 
@@ -683,6 +711,8 @@ const SWAP_SIDES = false;   // true = swap left/right relative to firmware, fals
 const LS        = 'woodmood_cfg';
 const LS_ALERTS = 'woodmood_alerts';
 const LS_HOUSE  = 'woodmood_house';
+const LS_SCHED    = 'woodmood_schedule';
+const LS_SCHED_EN = 'woodmood_sched_enabled';
 
 let cfg              = JSON.parse(localStorage.getItem(LS) || '{}');
 let client           = null;
@@ -698,6 +728,12 @@ let faultReady           = false;   // firmware signals fault can be resolved
 let faultCountdownActive = false;   // local 10-s countdown is running
 let faultCountdownTimer  = null;
 let insulation       = null;
+let schedTemps       = Array(12).fill(20);
+let schedEnabled     = false;
+let schedDrag        = null;
+let schedSlotTimer   = null;
+let lastSchedSlot    = -1;
+let optionsOpen      = false;
 
 // Derived state tracking
 let stoveTemp          = null;   // latest stove temp (°C) from MQTT
@@ -723,6 +759,7 @@ function isLocked(f)  { return !!(pendingCmds[f] && Date.now() < pendingCmds[f])
 // ============================================================
 window.addEventListener('load', () => {
   loadSettings();
+  initSchedule();
   // Restore last known wanted temp from localStorage so the display is never
   // wrong on a fresh page load (before the first MQTT status arrives).
   const savedRoom = parseInt(localStorage.getItem('woodmood_room_temp'));
@@ -786,6 +823,22 @@ function connect() {
     offlineTimer = null;
     document.getElementById('offline-overlay').classList.remove('show');
     client.subscribe(prefix + '/status/#');
+    client.subscribe(prefix + '/schedule');
+    if (schedTemps.some(t => t !== 20))
+      client.publish(prefix + '/schedule', JSON.stringify(schedTemps), { qos:1, retain:true });
+    // Apply current schedule slot on (re)connect
+    lastSchedSlot = Math.floor(new Date().getHours() / 2);
+    applyScheduleSlot();
+    // Start slot-change watcher (checks every minute)
+    if (!schedSlotTimer) {
+      schedSlotTimer = setInterval(function() {
+        const slot = Math.floor(new Date().getHours() / 2);
+        if (slot !== lastSchedSlot) {
+          lastSchedSlot = slot;
+          applyScheduleSlot();
+        }
+      }, 60000);
+    }
   });
 
   client.on('message',   onMessage);
@@ -830,6 +883,18 @@ function showOffline() {
 function onMessage(topic, payloadBuf) {
   const payload = payloadBuf.toString();
   const sub     = topic.replace(prefix + '/', '');
+
+  if (sub === 'schedule') {
+    try {
+      const arr = JSON.parse(payload);
+      if (Array.isArray(arr) && arr.length === 12) {
+        schedTemps = arr.map(t => Math.min(24, Math.max(18, Math.round(t))));
+        localStorage.setItem(LS_SCHED, JSON.stringify(schedTemps));
+        if (optionsOpen) renderScheduleSVG();
+      }
+    } catch(e) {}
+    return;
+  }
 
   if (sub === 'status/heartbeat') {
     publish('cmd/heartbeat_ack', '1');
@@ -1580,6 +1645,253 @@ function toggleSettings() {
   settingsOpen = !settingsOpen;
   document.getElementById('settings-body').classList.toggle('open', settingsOpen);
   document.getElementById('settings-arrow').classList.toggle('open', settingsOpen);
+}
+
+// ============================================================
+// OPTIONS — TEMPERATURE SCHEDULE
+// ============================================================
+const SCHED_SLOTS = 12, SCHED_TMIN = 18, SCHED_TMAX = 24;
+const SPL = 28, SPR = 312, SPT = 10, SPB = 133;
+const SPW = SPR - SPL, SPH = SPB - SPT;
+
+function spX(i)     { return SPL + i * SPW / (SCHED_SLOTS - 1); }
+function spY(t)     { return SPT + (SCHED_TMAX - t) / (SCHED_TMAX - SCHED_TMIN) * SPH; }
+function spYtoT(py) { return Math.round(Math.min(SCHED_TMAX, Math.max(SCHED_TMIN, SCHED_TMAX - (py - SPT) / SPH * (SCHED_TMAX - SCHED_TMIN)))); }
+
+function initSchedule() {
+  const saved = JSON.parse(localStorage.getItem(LS_SCHED) || 'null');
+  if (Array.isArray(saved) && saved.length === SCHED_SLOTS)
+    schedTemps = saved.map(t => Math.min(SCHED_TMAX, Math.max(SCHED_TMIN, Math.round(t))));
+  schedEnabled = localStorage.getItem(LS_SCHED_EN) === '1';
+  document.getElementById('sched-badge').classList.toggle('active', schedEnabled);
+}
+
+function toggleOptions() {
+  optionsOpen = !optionsOpen;
+  document.getElementById('options-body').classList.toggle('open', optionsOpen);
+  document.getElementById('options-arrow').classList.toggle('open', optionsOpen);
+  if (optionsOpen) {
+    document.getElementById('tog-sched-enable').checked = schedEnabled;
+    renderScheduleSVG();
+    updateSchedStatus();
+  }
+}
+
+function setSchedEnabled(on) {
+  schedEnabled = on;
+  localStorage.setItem(LS_SCHED_EN, on ? '1' : '0');
+  document.getElementById('sched-badge').classList.toggle('active', on);
+  updateSchedStatus();
+  if (on) applyScheduleSlot();
+}
+
+function applyScheduleSlot() {
+  if (!schedEnabled || !client || !client.connected) return;
+  const slot = Math.floor(new Date().getHours() / 2);
+  const t = schedTemps[slot];
+  if (t < SCHED_TMIN || t > SCHED_TMAX) return;
+  roomTemp = t;
+  document.getElementById('room-val').textContent = roomTemp + '°';
+  localStorage.setItem('woodmood_room_temp', roomTemp);
+  lockField('room_temp');
+  publish('cmd/room_temp', roomTemp);
+}
+
+function updateSchedStatus() {
+  const el = document.getElementById('sched-status');
+  if (!el) return;
+  if (!schedEnabled) { el.textContent = ''; return; }
+  const slot = Math.floor(new Date().getHours() / 2);
+  const t = schedTemps[slot];
+  const nextSlot = (slot + 1) % SCHED_SLOTS;
+  el.textContent = 'Now (' + (slot*2) + 'h–' + (slot*2+2) + 'h): ' + t + '°C  →  Next: ' + schedTemps[nextSlot] + '°C';
+}
+
+function smoothPath(pts) {
+  if (pts.length < 2) return '';
+  let d = 'M ' + pts[0].x.toFixed(1) + ' ' + pts[0].y.toFixed(1);
+  for (let i = 1; i < pts.length; i++) {
+    const p0 = pts[Math.max(0, i - 2)];
+    const p1 = pts[i - 1];
+    const p2 = pts[i];
+    const p3 = pts[Math.min(pts.length - 1, i + 1)];
+    const cp1x = (p1.x + (p2.x - p0.x) / 6).toFixed(1);
+    const cp1y = (p1.y + (p2.y - p0.y) / 6).toFixed(1);
+    const cp2x = (p2.x - (p3.x - p1.x) / 6).toFixed(1);
+    const cp2y = (p2.y - (p3.y - p1.y) / 6).toFixed(1);
+    d += ' C ' + cp1x + ' ' + cp1y + ' ' + cp2x + ' ' + cp2y + ' ' + p2.x.toFixed(1) + ' ' + p2.y.toFixed(1);
+  }
+  return d;
+}
+
+function renderScheduleSVG() {
+  const svg = document.getElementById('schedule-svg');
+  if (!svg) return;
+  const ns = 'http://www.w3.org/2000/svg';
+  svg.innerHTML = '';
+
+  // Gradient def
+  const defs = document.createElementNS(ns, 'defs');
+  const grad = document.createElementNS(ns, 'linearGradient');
+  grad.setAttribute('id', 'sched-grad'); grad.setAttribute('x1','0'); grad.setAttribute('y1','0'); grad.setAttribute('x2','0'); grad.setAttribute('y2','1');
+  const s1 = document.createElementNS(ns, 'stop'); s1.setAttribute('offset','0%');   s1.setAttribute('stop-color','#CD853F'); s1.setAttribute('stop-opacity','0.28');
+  const s2 = document.createElementNS(ns, 'stop'); s2.setAttribute('offset','100%'); s2.setAttribute('stop-color','#CD853F'); s2.setAttribute('stop-opacity','0.02');
+  grad.appendChild(s1); grad.appendChild(s2); defs.appendChild(grad); svg.appendChild(defs);
+
+  // Horizontal grid lines + y-axis labels
+  for (let t = SCHED_TMIN; t <= SCHED_TMAX; t++) {
+    const y = spY(t);
+    const gl = document.createElementNS(ns, 'line');
+    gl.setAttribute('x1', SPL); gl.setAttribute('x2', SPR);
+    gl.setAttribute('y1', y);  gl.setAttribute('y2', y);
+    gl.setAttribute('stroke', t === 20 ? '#e0c8b0' : '#f5ede4');
+    gl.setAttribute('stroke-width', t === 20 ? '1.2' : '0.7');
+    svg.appendChild(gl);
+    const lbl = document.createElementNS(ns, 'text');
+    lbl.setAttribute('x', SPL - 4); lbl.setAttribute('y', y + 3.5);
+    lbl.setAttribute('text-anchor', 'end'); lbl.setAttribute('font-size', '9');
+    lbl.setAttribute('fill', '#bba090'); lbl.textContent = t + '°';
+    svg.appendChild(lbl);
+  }
+
+  // Current 2h-slot highlight
+  const curSlot = Math.floor(new Date().getHours() / 2);
+  const slotW   = SPW / (SCHED_SLOTS - 1);
+  const hlRect  = document.createElementNS(ns, 'rect');
+  hlRect.setAttribute('x', spX(curSlot) - slotW / 2); hlRect.setAttribute('y', SPT);
+  hlRect.setAttribute('width', slotW); hlRect.setAttribute('height', SPH);
+  hlRect.setAttribute('fill', 'rgba(139,69,19,0.07)'); hlRect.setAttribute('rx', '3');
+  svg.appendChild(hlRect);
+
+  const pts = schedTemps.map((t, i) => ({ x: spX(i), y: spY(t) }));
+
+  // Fill under curve
+  const fill = document.createElementNS(ns, 'path');
+  fill.setAttribute('id', 'sched-fill');
+  fill.setAttribute('d', smoothPath(pts) + ' L ' + pts[pts.length-1].x + ' ' + SPB + ' L ' + pts[0].x + ' ' + SPB + ' Z');
+  fill.setAttribute('fill', 'url(#sched-grad)'); fill.setAttribute('stroke', 'none');
+  svg.appendChild(fill);
+
+  // Curve
+  const curve = document.createElementNS(ns, 'path');
+  curve.setAttribute('id', 'sched-curve');
+  curve.setAttribute('d', smoothPath(pts));
+  curve.setAttribute('fill', 'none'); curve.setAttribute('stroke', '#8B4513');
+  curve.setAttribute('stroke-width', '2'); curve.setAttribute('stroke-linejoin', 'round');
+  svg.appendChild(curve);
+
+  // X-axis labels
+  for (let i = 0; i < SCHED_SLOTS; i++) {
+    const lbl = document.createElementNS(ns, 'text');
+    lbl.setAttribute('x', spX(i)); lbl.setAttribute('y', SPB + 15);
+    lbl.setAttribute('text-anchor', 'middle'); lbl.setAttribute('font-size', '8.5');
+    lbl.setAttribute('fill', i === curSlot ? '#8B4513' : '#bba090');
+    lbl.setAttribute('font-weight', i === curSlot ? '700' : 'normal');
+    lbl.textContent = (i * 2) + 'h';
+    svg.appendChild(lbl);
+  }
+
+  // Draggable point groups
+  pts.forEach(function(p, i) {
+    const g = document.createElementNS(ns, 'g');
+    g.setAttribute('class', 'sched-pt'); g.setAttribute('data-idx', i);
+
+    const hit = document.createElementNS(ns, 'circle');
+    hit.setAttribute('cx', p.x); hit.setAttribute('cy', p.y);
+    hit.setAttribute('r', '14'); hit.setAttribute('fill', 'transparent');
+    g.appendChild(hit);
+
+    const dot = document.createElementNS(ns, 'circle');
+    dot.setAttribute('class', 'sched-dot-' + i);
+    dot.setAttribute('cx', p.x); dot.setAttribute('cy', p.y);
+    dot.setAttribute('r', '5'); dot.setAttribute('fill', '#8B4513');
+    dot.setAttribute('stroke', '#fff'); dot.setAttribute('stroke-width', '2');
+    g.appendChild(dot);
+
+    const tlbl = document.createElementNS(ns, 'text');
+    tlbl.setAttribute('class', 'sched-lbl-' + i);
+    tlbl.setAttribute('x', p.x);
+    tlbl.setAttribute('y', p.y < 22 ? p.y + 18 : p.y - 9);
+    tlbl.setAttribute('text-anchor', 'middle'); tlbl.setAttribute('font-size', '9');
+    tlbl.setAttribute('font-weight', '700'); tlbl.setAttribute('fill', '#8B4513');
+    tlbl.textContent = schedTemps[i] + '°';
+    g.appendChild(tlbl);
+
+    svg.appendChild(g);
+  });
+
+  svg.onmousedown  = schedOnDown;
+  svg.ontouchstart = schedOnDown;
+}
+
+function updateScheduleSVG() {
+  const svg = document.getElementById('schedule-svg');
+  if (!svg) return;
+  const pts = schedTemps.map(function(t, i) { return { x: spX(i), y: spY(t) }; });
+
+  const curve = svg.querySelector('#sched-curve');
+  if (curve) curve.setAttribute('d', smoothPath(pts));
+
+  const fill = svg.querySelector('#sched-fill');
+  if (fill) fill.setAttribute('d', smoothPath(pts) + ' L ' + pts[pts.length-1].x + ' ' + SPB + ' L ' + pts[0].x + ' ' + SPB + ' Z');
+
+  pts.forEach(function(p, i) {
+    const g = svg.querySelector('.sched-pt[data-idx="' + i + '"]');
+    if (!g) return;
+    g.querySelectorAll('circle').forEach(function(c) { c.setAttribute('cy', p.y); });
+    const lbl = g.querySelector('.sched-lbl-' + i);
+    if (lbl) {
+      lbl.setAttribute('y', p.y < 22 ? p.y + 18 : p.y - 9);
+      lbl.textContent = schedTemps[i] + '°';
+    }
+  });
+}
+
+function svgClientToPoint(svg, clientX, clientY) {
+  const pt = svg.createSVGPoint();
+  pt.x = clientX; pt.y = clientY;
+  return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+
+function schedOnDown(e) {
+  const g = e.target.closest('.sched-pt');
+  if (!g) return;
+  e.preventDefault();
+  const svg = document.getElementById('schedule-svg');
+  schedDrag = { idx: parseInt(g.getAttribute('data-idx')), svg: svg };
+  window.addEventListener('mousemove', schedOnMove);
+  window.addEventListener('mouseup',   schedOnUp);
+  window.addEventListener('touchmove', schedOnMove, { passive: false });
+  window.addEventListener('touchend',  schedOnUp);
+}
+
+function schedOnMove(e) {
+  if (!schedDrag) return;
+  e.preventDefault();
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  const sp      = svgClientToPoint(schedDrag.svg, 0, clientY);
+  const newTemp = spYtoT(sp.y);
+  if (schedTemps[schedDrag.idx] === newTemp) return;
+  schedTemps[schedDrag.idx] = newTemp;
+  updateScheduleSVG();
+  updateSchedStatus();
+}
+
+function schedOnUp() {
+  schedDrag = null;
+  window.removeEventListener('mousemove', schedOnMove);
+  window.removeEventListener('mouseup',   schedOnUp);
+  window.removeEventListener('touchmove', schedOnMove);
+  window.removeEventListener('touchend',  schedOnUp);
+}
+
+function saveSchedule() {
+  localStorage.setItem(LS_SCHED, JSON.stringify(schedTemps));
+  updateSchedStatus();
+  if (!client || !client.connected) { showToast('Saved locally (not connected)'); return; }
+  client.publish(prefix + '/schedule', JSON.stringify(schedTemps), { qos: 1, retain: true });
+  applyScheduleSlot();
+  showToast(schedEnabled ? 'Schedule saved & applied' : 'Schedule saved (enable to activate)');
 }
 </script>
 </body>
