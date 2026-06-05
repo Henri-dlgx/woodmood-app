@@ -299,7 +299,7 @@
       <div class="main-temp-half">
         <div class="wanted-controls">
           <button class="adj-btn" onclick="adjustRoom(-1)">−</button>
-          <div id="room-val">20°</div>
+          <div id="room-val">T3</div>
           <button class="adj-btn" onclick="adjustRoom(+1)">+</button>
         </div>
         <div class="temp-small-label">Wanted temperature</div>
@@ -763,7 +763,7 @@ window.addEventListener('load', () => {
   // Restore last known wanted temp from localStorage so the display is never
   // wrong on a fresh page load (before the first MQTT status arrives).
   const savedRoom = parseInt(localStorage.getItem('woodmood_room_temp'));
-  if (savedRoom >= 18 && savedRoom <= 26) roomTemp = savedRoom;
+  if (savedRoom >= 18 && savedRoom <= 23) roomTemp = savedRoom;
   if (cfg.broker && cfg.user && cfg.pass && cfg.serial) {
     fillForm();
     document.getElementById('conn-card').style.display = 'none';
@@ -771,7 +771,7 @@ window.addEventListener('load', () => {
   }
   renderBars('left',  0);
   renderBars('right', 0);
-  document.getElementById('room-val').textContent = roomTemp + '°';
+  document.getElementById('room-val').textContent = tempToLabel(roomTemp);
 });
 
 function fillForm() {
@@ -983,9 +983,9 @@ function applyFull(d) {
   // Skipped for 4 s after the local user taps +/- to avoid rubber-banding.
   if (d.room_setpoint !== undefined && !isLocked('room_temp')) {
     const r = parseInt(d.room_setpoint);
-    if (r >= 18 && r <= 26 && r !== roomTemp) {
+    if (r >= 18 && r <= 23 && r !== roomTemp) {
       roomTemp = r;
-      document.getElementById('room-val').textContent = roomTemp + '°';
+      document.getElementById('room-val').textContent = tempToLabel(roomTemp);
       localStorage.setItem('woodmood_room_temp', roomTemp);
     }
   }
@@ -1255,8 +1255,8 @@ function publish(subtopic, payload) {
 function mapSide(s) { return SWAP_SIDES ? (s === 'l' ? 'r' : 'l') : s; }
 
 function adjustRoom(delta) {
-  roomTemp = Math.min(26, Math.max(18, (isNaN(roomTemp) ? 20 : roomTemp) + delta));
-  document.getElementById('room-val').textContent = roomTemp + '°';
+  roomTemp = Math.min(23, Math.max(18, (isNaN(roomTemp) ? 20 : roomTemp) + delta));
+  document.getElementById('room-val').textContent = tempToLabel(roomTemp);
   localStorage.setItem('woodmood_room_temp', roomTemp);
   lockField('room_temp');   // prevent MQTT echo from overwriting immediately after a tap
   publish('cmd/room_temp', roomTemp);
@@ -1692,7 +1692,7 @@ function applyScheduleSlot() {
   const t = schedTemps[slot];
   if (t < SCHED_TMIN || t > SCHED_TMAX) return;
   roomTemp = t;
-  document.getElementById('room-val').textContent = roomTemp + '°';
+  document.getElementById('room-val').textContent = tempToLabel(roomTemp);
   localStorage.setItem('woodmood_room_temp', roomTemp);
   lockField('room_temp');
   publish('cmd/room_temp', roomTemp);
