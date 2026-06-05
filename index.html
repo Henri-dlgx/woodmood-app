@@ -497,7 +497,7 @@
           <label class="tgl"><input type="checkbox" id="tog-sched-enable" onchange="setSchedEnabled(this.checked)"><span class="tgl-sl"></span></label>
         </div>
         <div class="settings-section">Temperature Schedule</div>
-        <div style="font-size:.78rem;color:#888;margin-bottom:10px">Drag points to set target temperature per 2-hour block (18–23°C)</div>
+        <div style="font-size:.78rem;color:#888;margin-bottom:10px">Drag points to set comfort level per 2-hour block (T1–T6)</div>
         <svg id="schedule-svg" width="100%" viewBox="0 0 320 155" style="display:block;touch-action:none;overflow:visible"></svg>
         <div id="sched-status" style="font-size:.78rem;color:#8B4513;margin-top:8px;text-align:center;min-height:1.2em"></div>
         <button class="btn btn-brown btn-sm btn-full" style="margin-top:8px" onclick="saveSchedule()">Save &amp; Apply Schedule</button>
@@ -1657,6 +1657,7 @@ const SPW = SPR - SPL, SPH = SPB - SPT;
 function spX(i)     { return SPL + i * SPW / (SCHED_SLOTS - 1); }
 function spY(t)     { return SPT + (SCHED_TMAX - t) / (SCHED_TMAX - SCHED_TMIN) * SPH; }
 function spYtoT(py) { return Math.round(Math.min(SCHED_TMAX, Math.max(SCHED_TMIN, SCHED_TMAX - (py - SPT) / SPH * (SCHED_TMAX - SCHED_TMIN)))); }
+function tempToLabel(t) { return 'T' + (t - SCHED_TMIN + 1); }  // 18→T1, 19→T2 … 23→T6
 
 function initSchedule() {
   const saved = JSON.parse(localStorage.getItem(LS_SCHED) || 'null');
@@ -1704,7 +1705,7 @@ function updateSchedStatus() {
   const slot = Math.floor(new Date().getHours() / 2);
   const t = schedTemps[slot];
   const nextSlot = (slot + 1) % SCHED_SLOTS;
-  el.textContent = 'Now (' + (slot*2) + 'h–' + (slot*2+2) + 'h): ' + t + '°C  →  Next: ' + schedTemps[nextSlot] + '°C';
+  el.textContent = 'Now (' + (slot*2) + 'h–' + (slot*2+2) + 'h): ' + tempToLabel(t) + '  →  Next: ' + tempToLabel(schedTemps[nextSlot]);
 }
 
 function smoothPath(pts) {
@@ -1750,7 +1751,7 @@ function renderScheduleSVG() {
     const lbl = document.createElementNS(ns, 'text');
     lbl.setAttribute('x', SPL - 4); lbl.setAttribute('y', y + 3.5);
     lbl.setAttribute('text-anchor', 'end'); lbl.setAttribute('font-size', '9');
-    lbl.setAttribute('fill', '#bba090'); lbl.textContent = t + '°';
+    lbl.setAttribute('fill', '#bba090'); lbl.textContent = tempToLabel(t);
     svg.appendChild(lbl);
   }
 
@@ -1814,7 +1815,7 @@ function renderScheduleSVG() {
     tlbl.setAttribute('y', p.y < 22 ? p.y + 18 : p.y - 9);
     tlbl.setAttribute('text-anchor', 'middle'); tlbl.setAttribute('font-size', '9');
     tlbl.setAttribute('font-weight', '700'); tlbl.setAttribute('fill', '#8B4513');
-    tlbl.textContent = schedTemps[i] + '°';
+    tlbl.textContent = tempToLabel(schedTemps[i]);
     g.appendChild(tlbl);
 
     svg.appendChild(g);
@@ -1842,7 +1843,7 @@ function updateScheduleSVG() {
     const lbl = g.querySelector('.sched-lbl-' + i);
     if (lbl) {
       lbl.setAttribute('y', p.y < 22 ? p.y + 18 : p.y - 9);
-      lbl.textContent = schedTemps[i] + '°';
+      lbl.textContent = tempToLabel(schedTemps[i]);
     }
   });
 }
