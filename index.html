@@ -497,7 +497,7 @@
           <label class="tgl"><input type="checkbox" id="tog-sched-enable" onchange="setSchedEnabled(this.checked)"><span class="tgl-sl"></span></label>
         </div>
         <div class="settings-section">Temperature Schedule</div>
-        <div style="font-size:.78rem;color:#888;margin-bottom:10px">Drag points to set target temperature per 2-hour block (18–24°C)</div>
+        <div style="font-size:.78rem;color:#888;margin-bottom:10px">Drag points to set target temperature per 2-hour block (18–23°C)</div>
         <svg id="schedule-svg" width="100%" viewBox="0 0 320 155" style="display:block;touch-action:none;overflow:visible"></svg>
         <div id="sched-status" style="font-size:.78rem;color:#8B4513;margin-top:8px;text-align:center;min-height:1.2em"></div>
         <button class="btn btn-brown btn-sm btn-full" style="margin-top:8px" onclick="saveSchedule()">Save &amp; Apply Schedule</button>
@@ -888,7 +888,7 @@ function onMessage(topic, payloadBuf) {
     try {
       const arr = JSON.parse(payload);
       if (Array.isArray(arr) && arr.length === 12) {
-        schedTemps = arr.map(t => Math.min(24, Math.max(18, Math.round(t))));
+        schedTemps = arr.map(t => Math.min(23, Math.max(18, Math.round(t))));
         localStorage.setItem(LS_SCHED, JSON.stringify(schedTemps));
         if (optionsOpen) renderScheduleSVG();
       }
@@ -1650,7 +1650,7 @@ function toggleSettings() {
 // ============================================================
 // OPTIONS — TEMPERATURE SCHEDULE
 // ============================================================
-const SCHED_SLOTS = 12, SCHED_TMIN = 18, SCHED_TMAX = 24;
+const SCHED_SLOTS = 12, SCHED_TMIN = 18, SCHED_TMAX = 23;
 const SPL = 28, SPR = 312, SPT = 10, SPB = 133;
 const SPW = SPR - SPL, SPH = SPB - SPT;
 
