@@ -807,7 +807,7 @@ function connect() {
 
   if (client) { try { client.end(true); } catch(e){} }
 
-  client = mqtt.connect(`wss://${cfg.broker}:8884/mqtt`, {
+  client = mqtt.connect(`wss://${cfg.broker}:8084/mqtt`, {
     username:        cfg.user,
     password:        cfg.pass,
     clientId:        'woodmood-web-' + Math.random().toString(16).substr(2,8),
