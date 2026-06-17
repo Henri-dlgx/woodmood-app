@@ -1131,6 +1131,12 @@ function sysButtonClick() {
     // widens the timing window where a QoS-1 duplicate cooldown can slip through.
     lockField('system_state');
     publish('cmd/start', '1');
+    publish('cmd/auto_insert_en', '1');
+    lockField('auto_insert');
+    techAutoInsertOn = true;
+    document.getElementById('tog-auto-insert').checked = true;
+    const _mb = document.getElementById('manual-insert-btn');
+    if (_mb) _mb.style.display = 'none';
     applySystemState('startup');
   }
 }
