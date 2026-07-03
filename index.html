@@ -733,6 +733,7 @@ let schedTemps       = Array(12).fill(20);
 let schedEnabled     = false;
 let schedDrag        = null;
 let schedSlotTimer   = null;
+let fwSchedSlot      = -1;    // active 2-h slot as reported by the stove (sched_slot), -1 = unknown
 let lastSchedSlot    = -1;
 let optionsOpen      = false;
 
@@ -827,8 +828,12 @@ function connect() {
     document.getElementById('offline-overlay').classList.remove('show');
     client.subscribe(prefix + '/status/#');
     client.subscribe(prefix + '/schedule');
-    if (schedTemps.some(t => t !== 20))
-      client.publish(prefix + '/schedule', JSON.stringify(schedTemps), { qos:1, retain:true });
+    // NOTE: schedule enable/disable is NOT re-pushed here. The firmware persists
+    // _scheduleEnabled in NVS (survives reboots) and is the single source of truth
+    // shared by every connected phone via status/full's sched_enabled field (see
+    // applyFull()). Pushing this app's own locally-cached schedEnabled on every
+    // reconnect used to let a second phone's stale/default toggle silently
+    // clobber whatever the other phone had just set.
     // Apply current schedule slot on (re)connect
     lastSchedSlot = Math.floor(new Date().getHours() / 2);
     applyScheduleSlot();
@@ -994,6 +999,25 @@ function applyFull(d) {
   if (d.maint_joint !== undefined) document.getElementById('joint-days').textContent = d.maint_joint + ' days';
   if (d.maint_ramon !== undefined) document.getElementById('ramon-days').textContent = d.maint_ramon + ' days since last';
   if (d.maint_seal  !== undefined) document.getElementById('seal-days').textContent  = d.maint_seal  + ' days';
+  // Pull the firmware's persisted schedule-enable state so every connected phone
+  // converges on it, instead of each app only trusting its own local toggle.
+  if (d.sched_enabled !== undefined && !isLocked('sched_enabled')) {
+    const en = !!d.sched_enabled;
+    if (en !== schedEnabled) {
+      schedEnabled = en;
+      localStorage.setItem(LS_SCHED_EN, en ? '1' : '0');
+      document.getElementById('sched-badge').classList.toggle('active', en);
+      const togEl = document.getElementById('tog-sched-enable');
+      if (togEl) togEl.checked = en;
+      updateSchedStatus();
+    }
+  }
+  // Track the slot the stove is actually running (NTP-driven, source of truth),
+  // so the "Now / Next" summary matches the stove instead of this phone's clock.
+  if (d.sched_slot !== undefined) {
+    const s = parseInt(d.sched_slot);
+    if (s !== fwSchedSlot) { fwSchedSlot = s; updateSchedStatus(); }
+  }
 
   applyTechState(d);
   calcBurnTime();
@@ -1673,29 +1697,47 @@ function toggleOptions() {
 
 function setSchedEnabled(on) {
   schedEnabled = on;
+  lockField('sched_enabled');
   localStorage.setItem(LS_SCHED_EN, on ? '1' : '0');
   document.getElementById('sched-badge').classList.toggle('active', on);
   updateSchedStatus();
-  if (on) applyScheduleSlot();
+  if (client && client.connected) {
+    client.publish(prefix + '/cmd/schedule_en', on ? '1' : '0', { qos:1 });
+    if (on) {
+      // Push the current curve so the firmware definitely has it, and keep it as
+      // the retained copy every other phone loads on connect.
+      client.publish(prefix + '/schedule', JSON.stringify(schedTemps), { qos:1, retain:true });
+    }
+    // NOTE: we intentionally do NOT clear the retained `schedule` on disable.
+    // The curve (T1@00h, T2@02h, …) is the only cross-phone copy of the profile —
+    // wiping it meant the next phone to open fell back to a flat default and could
+    // then re-upload that blank curve. The firmware no longer re-arms itself from
+    // the retained schedule (enable is owned solely by cmd/schedule_en + NVS), so
+    // leaving the curve retained is safe and preserves the user's profile.
+  }
+  updateSchedStatus();
 }
 
 function applyScheduleSlot() {
-  if (!schedEnabled || !client || !client.connected) return;
-  const slot = Math.floor(new Date().getHours() / 2);
-  const t = schedTemps[slot];
-  if (t < SCHED_TMIN || t > SCHED_TMAX) return;
-  roomTemp = t;
-  document.getElementById('room-val').textContent = tempToLabel(roomTemp);
-  localStorage.setItem('woodmood_room_temp', roomTemp);
-  lockField('room_temp');
-  publish('cmd/room_temp', roomTemp);
+  // The firmware (NTP time) is the SOLE authority that applies each 2-hour slot
+  // and echoes the result back as room_setpoint in status/full (see applyFull).
+  // The app deliberately does NOT publish cmd/room_temp from the schedule any
+  // more: when several phones did that, each used its own browser clock and they
+  // raced each other — and the firmware's own scheduler — to set the temperature.
+  // Now every phone just displays what the stove reports, so they all agree.
+  // This function only refreshes the on-screen "Now / Next" summary.
+  updateSchedStatus();
 }
 
 function updateSchedStatus() {
   const el = document.getElementById('sched-status');
   if (!el) return;
   if (!schedEnabled) { el.textContent = ''; return; }
-  const slot = Math.floor(new Date().getHours() / 2);
+  // Prefer the stove's reported slot (NTP, shared by all phones); fall back to
+  // this device's clock only until the first status arrives.
+  const slot = (fwSchedSlot >= 0 && fwSchedSlot < SCHED_SLOTS)
+             ? fwSchedSlot
+             : Math.floor(new Date().getHours() / 2);
   const t = schedTemps[slot];
   const nextSlot = (slot + 1) % SCHED_SLOTS;
   el.textContent = 'Now (' + (slot*2) + 'h–' + (slot*2+2) + 'h): ' + tempToLabel(t) + '  →  Next: ' + tempToLabel(schedTemps[nextSlot]);
@@ -1883,8 +1925,12 @@ function saveSchedule() {
   localStorage.setItem(LS_SCHED, JSON.stringify(schedTemps));
   updateSchedStatus();
   if (!client || !client.connected) { showToast('Saved locally (not connected)'); return; }
+  // Always publish the retained curve, even while the schedule is disabled, so
+  // every other phone converges on the same profile. The firmware only *acts* on
+  // it when the schedule is enabled (enable is decoupled from curve data), so
+  // this is safe and keeps the T1/T2/… points identical across all clients.
   client.publish(prefix + '/schedule', JSON.stringify(schedTemps), { qos: 1, retain: true });
-  applyScheduleSlot();
+  updateSchedStatus();
   showToast(schedEnabled ? 'Schedule saved & applied' : 'Schedule saved (enable to activate)');
 }
 </script>
