@@ -628,6 +628,36 @@
 
       <hr class="divider">
 
+      <!-- ── MAIN FAN AIR-BREAK (TEMPORARY TUNING BLOCK) ──────────────────────
+           These inputs exist only while the air-break numbers are being dialled
+           in on the stove. Once the right values are known, delete this whole
+           section, the applyAirBreak()/setAirBreakEn() functions, the
+           status/airbreak handler in onMessage() and the firmware's cmd/airbreak_*
+           topics — the firmware falls back to its hardcoded OSC_DEFAULT_* values. -->
+      <div>
+        <div class="tech-sec">Main Fan Air-Break<span id="airbreak-live" class="side-badge" style="display:none">● throttling</span></div>
+        <div class="tech-field-lbl" style="margin-bottom:8px">
+          When the fan sits near its 70% cap for too long the fire never builds. The
+          air-break drops the MAIN fan to a lower speed for a while, then hands it
+          back to the PID. Cooling fan, PID and insertion tracking are untouched.
+        </div>
+        <div class="toggle-wrap">
+          <span class="toggle-label">Air-break enabled</span>
+          <label class="tgl"><input type="checkbox" id="tog-airbreak" onchange="setAirBreakEn(this.checked)"><span class="tgl-sl"></span></label>
+        </div>
+        <div id="airbreak-rows" style="margin-top:10px">
+          <div class="tech-field-lbl">Throttle down to (% main fan)</div>
+          <input id="airbreak-pct" class="tech-input" type="number" min="0" max="70" value="30">
+          <div class="tech-field-lbl" style="margin-top:10px">High demand before throttling (seconds)</div>
+          <input id="airbreak-hold" class="tech-input" type="number" min="10" max="3600" value="120">
+          <div class="tech-field-lbl" style="margin-top:10px">Throttle window length (seconds)</div>
+          <input id="airbreak-time" class="tech-input" type="number" min="10" max="3600" value="120">
+          <button class="btn btn-brown btn-sm" style="width:100%;margin-top:10px" onclick="applyAirBreak()">Apply air-break settings</button>
+        </div>
+      </div>
+
+      <hr class="divider">
+
       <!-- MANUAL MOTOR CONTROL -->
       <div>
         <div class="tech-sec">Manual Motor Control<span id="motor-side-lbl" class="side-badge">◀ L</span></div>
@@ -915,6 +945,8 @@ function onMessage(topic, payloadBuf) {
 
   if (sub === 'status/full')       { try { applyFull(JSON.parse(payload)); } catch(e){} return; }
   if (sub === 'status/fault_msg')  { setFaultMsg(payload);      return; }
+  // TEMPORARY TUNING BLOCK — retained echo of the main-fan air-break settings.
+  if (sub === 'status/airbreak')   { try { applyAirBreak_status(JSON.parse(payload)); } catch(e){} return; }
   if (sub === 'status/fault_side') { const _s = payload.toLowerCase(); faultSide = (_s === 'right' || _s === 'r') ? 'r' : 'l'; if (faultActive) renderFaultPhase(); return; }
 
   // status/temperature, status/room_temp, status/fault, status/system_state and
@@ -1497,6 +1529,52 @@ function applyNormalFloor() {
   const val = Math.min(70, Math.max(0, parseInt(document.getElementById('normal-floor-val').value) || 65));
   publish('cmd/normal_floor', String(val));
   showToast('Normal cruise floor \u2192 ' + val + '%');
+}
+
+// ============================================================
+// MAIN FAN AIR-BREAK — TEMPORARY TUNING BLOCK
+// ============================================================
+// Delete this section together with the Technical-mode markup and the
+// status/airbreak handler once the values are hardcoded in the firmware.
+function setAirBreakEn(enabled) {
+  lockField('airbreak_en');
+  publish('cmd/airbreak_en', enabled ? '1' : '0');
+  document.getElementById('airbreak-rows').style.opacity = enabled ? '1' : '.45';
+  showToast('Air-break ' + (enabled ? 'ON' : 'OFF'));
+}
+
+function applyAirBreak() {
+  const pct  = Math.min(70,   Math.max(0,  parseInt(document.getElementById('airbreak-pct').value)  || 30));
+  const hold = Math.min(3600, Math.max(10, parseInt(document.getElementById('airbreak-hold').value) || 120));
+  const time = Math.min(3600, Math.max(10, parseInt(document.getElementById('airbreak-time').value) || 120));
+  document.getElementById('airbreak-pct').value  = pct;
+  document.getElementById('airbreak-hold').value = hold;
+  document.getElementById('airbreak-time').value = time;
+  lockField('airbreak_pct'); lockField('airbreak_hold'); lockField('airbreak_time');
+  publish('cmd/airbreak_pct',  String(pct));
+  publish('cmd/airbreak_hold', String(hold));
+  publish('cmd/airbreak_time', String(time));
+  showToast('Air-break \u2192 ' + pct + '% for ' + time + 's after ' + hold + 's high');
+}
+
+// Applies the firmware's retained status/airbreak echo. Same focus/lock guards as
+// applyFull(): never overwrite an input the user is currently typing into.
+function applyAirBreak_status(d) {
+  const focused = document.activeElement;
+  if (d.en !== undefined && !isLocked('airbreak_en')) {
+    document.getElementById('tog-airbreak').checked = !!d.en;
+    document.getElementById('airbreak-rows').style.opacity = d.en ? '1' : '.45';
+  }
+  const setNum = (id, val, key) => {
+    if (val === undefined || isLocked(key)) return;
+    const el = document.getElementById(id);
+    if (el && el !== focused) el.value = val;
+  };
+  setNum('airbreak-pct',  d.pct,  'airbreak_pct');
+  setNum('airbreak-hold', d.hold, 'airbreak_hold');
+  setNum('airbreak-time', d.time, 'airbreak_time');
+  const live = document.getElementById('airbreak-live');
+  if (live) live.style.display = d.active ? '' : 'none';
 }
 
 function techMotor(dir) {
