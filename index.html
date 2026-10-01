@@ -479,6 +479,19 @@
 
       <div class="divider"></div>
 
+      <!-- Room sensor (Bluetooth) -->
+      <div>
+        <div class="settings-section">Room Sensor (Bluetooth)</div>
+        <div class="gap-col">
+          <div style="font-size:.82rem;color:#777">Paste the Xiaomi thermometer's MAC address and bind key (from the Xiaomi Cloud tokens extractor) to connect a stock-firmware sensor. Re-pairing the sensor in Mi Home generates a new key.</div>
+          <input type="text" id="room-sensor-cfg" autocomplete="off" spellcheck="false" placeholder="MAC + key, e.g. A4:C1:38:B7:C0:40 af3dbf6ccf5cdf967a415b5b986ca8ee" style="width:100%;box-sizing:border-box;font-family:monospace;font-size:.78rem"/>
+          <button class="btn btn-brown btn-sm btn-full" onclick="saveRoomSensorConfig()">Connect sensor</button>
+          <div style="font-size:.78rem;color:#8B4513;text-align:center">Current sensor: <span id="room-sensor-mac-val">—</span></div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
       <!-- Disconnect -->
       <button class="btn btn-gray btn-full" onclick="disconnect()">Disconnect</button>
 
@@ -992,6 +1005,7 @@ function applyFull(d) {
     bleRoomTemp   = bleRoomTempOk ? val : null;
     updateBleRoomTemp();
   }
+  if (d.room_sensor_mac !== undefined) applyRoomSensorMac(d.room_sensor_mac);
   if (d.log_l !== undefined) {
     logL = parseInt(d.log_l) || 0;
     renderBars('left', logL);
@@ -1731,6 +1745,28 @@ function saveHouseParams() {
     insulation
   }));
   alert('House parameters saved.');
+}
+
+// ============================================================
+// SETTINGS — ROOM SENSOR (BLUETOOTH)
+// ============================================================
+function saveRoomSensorConfig() {
+  const input = document.getElementById('room-sensor-cfg');
+  // Firmware wants exactly 12 hex (MAC) + 32 hex (bind key); strip any punctuation.
+  const hex = (input.value || '').replace(/[^0-9a-fA-F]/g, '');
+  if (hex.length !== 44) {
+    showToast('Invalid format — MAC (12) + key (32) = 44 hex characters, got ' + hex.length);
+    return;
+  }
+  if (!client || !client.connected) { alert('Not connected to broker'); return; }
+  publish('cmd/room_sensor_cfg', hex);   // not retained — the key must not sit on the broker
+  input.value = '';
+  showToast('Sensor sent — waiting for the stove to confirm…');
+}
+
+function applyRoomSensorMac(mac) {
+  const el = document.getElementById('room-sensor-mac-val');
+  if (el) el.textContent = mac ? mac : 'None configured';
 }
 
 // ============================================================
