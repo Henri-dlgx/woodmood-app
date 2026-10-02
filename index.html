@@ -671,40 +671,6 @@
 
       <hr class="divider">
 
-      <!-- MOTOR SPEED (load-test tuning) ─────────────────────────────────────
-           Live drive-motor rates, firmware cmd/motor_cfg → retained status/motor_cfg.
-           Hidden until the stove publishes status/motor_cfg, so it never shows on
-           firmware that cannot act on it. Defaults and bounds come from the echo. -->
-      <div id="motor-cfg-block" style="display:none">
-        <div class="tech-sec">Motor Speed<span id="motor-cfg-custom" class="side-badge" style="display:none">tuned</span></div>
-        <div class="tech-field-lbl" style="margin-bottom:8px">
-          Stepper rate in full steps per second, before the gearbox. Faster costs
-          torque: if the carriage stalls or a log lands in the wrong place under
-          load, come back down. Applies from the next move and survives a reboot.
-        </div>
-        <div class="tech-field-lbl">Forward / insertion (Hz)</div>
-        <input id="motor-cfg-fwd" class="tech-input" type="number" min="100" max="2000" step="1" oninput="motorCfgHint()">
-        <div class="row-btns" style="margin-top:6px">
-          <button class="btn btn-gray btn-sm" style="flex:1" onclick="motorCfgPreset(666)">666</button>
-          <button class="btn btn-gray btn-sm" style="flex:1" onclick="motorCfgPreset(1000)">1000</button>
-          <button class="btn btn-gray btn-sm" style="flex:1" onclick="motorCfgPreset(1333)">1333</button>
-          <button class="btn btn-gray btn-sm" style="flex:1" onclick="motorCfgPreset(2000)">2000</button>
-        </div>
-        <div id="motor-cfg-fwd-hint" class="tech-field-lbl" style="margin-top:4px"></div>
-        <div class="tech-field-lbl" style="margin-top:10px">Rewind to home (Hz)</div>
-        <input id="motor-cfg-rew" class="tech-input" type="number" min="100" max="1000" step="1" oninput="motorCfgHint()">
-        <div id="motor-cfg-rew-hint" class="tech-field-lbl" style="margin-top:4px"></div>
-        <div class="tech-field-lbl" style="margin-top:10px">Acceleration (steps/s²)</div>
-        <input id="motor-cfg-acc" class="tech-input" type="number" min="100" max="5000" step="50" oninput="motorCfgHint()">
-        <div id="motor-cfg-acc-hint" class="tech-field-lbl" style="margin-top:4px"></div>
-        <div class="row-btns" style="margin-top:10px">
-          <button class="btn btn-brown btn-sm" style="flex:2" onclick="applyMotorCfg()">Apply motor speed</button>
-          <button class="btn btn-gray btn-sm"  style="flex:1" onclick="resetMotorCfg()">Defaults</button>
-        </div>
-      </div>
-
-      <hr class="divider" id="motor-cfg-divider" style="display:none">
-
       <!-- MANUAL MOTOR CONTROL -->
       <div>
         <div class="tech-sec">Manual Motor Control<span id="motor-side-lbl" class="side-badge">◀ L</span></div>
@@ -994,7 +960,6 @@ function onMessage(topic, payloadBuf) {
   if (sub === 'status/fault_msg')  { setFaultMsg(payload);      return; }
   // TEMPORARY TUNING BLOCK — retained echo of the main-fan air-break settings.
   if (sub === 'status/airbreak')   { try { applyAirBreak_status(JSON.parse(payload)); } catch(e){} return; }
-  if (sub === 'status/motor_cfg')  { try { applyMotorCfg_status(JSON.parse(payload)); } catch(e){} return; }
   if (sub === 'status/fault_side') { const _s = payload.toLowerCase(); faultSide = (_s === 'right' || _s === 'r') ? 'r' : 'l'; if (faultActive) renderFaultPhase(); return; }
 
   // status/temperature, status/room_temp, status/fault, status/system_state and
@@ -1624,97 +1589,6 @@ function applyAirBreak_status(d) {
   setNum('airbreak-time', d.time, 'airbreak_time');
   const live = document.getElementById('airbreak-live');
   if (live) live.style.display = d.active ? '' : 'none';
-}
-
-// ============================================================
-// MOTOR SPEED — runtime drive-motor tuning (load testing)
-// ============================================================
-// One command carries all three values ("fwd,rew,acc") so the stove never runs
-// a half-applied combination. No lockField(): the stove echoes the values it is
-// REALLY running right after every command — including a refused one — and that
-// echo is what the inputs must show.
-let motorCfg = null;        // last status/motor_cfg echo
-let motorCfgSent = null;    // {fwd,rew,acc,at} of the last Apply, to spot a refusal
-
-function motorCfgPreset(hz) {
-  document.getElementById('motor-cfg-fwd').value = hz;
-  motorCfgHint();
-}
-
-function motorCfgHint() {
-  if (!motorCfg) return;
-  const ratio = motorCfg.ratio || 50;
-  const rpm = hz => {
-    const motor = hz * 60 / 200;
-    return Math.round(motor) + ' rpm motor · ' + (motor / ratio).toFixed(1) + ' rpm out';
-  };
-  const val = id => parseInt(document.getElementById(id).value);
-  const fwd = val('motor-cfg-fwd'), rew = val('motor-cfg-rew'), acc = val('motor-cfg-acc');
-
-  let f = (fwd > 0 ? rpm(fwd) + ' · ' : '') + 'default ' + motorCfg.def_fwd + ', max ' + motorCfg.max_fwd;
-  if (fwd > 0 && motorCfg.def_fwd) f += ' · ' + (fwd / motorCfg.def_fwd).toFixed(2) + '× default';
-  document.getElementById('motor-cfg-fwd-hint').textContent = f;
-
-  const rh = document.getElementById('motor-cfg-rew-hint');
-  rh.textContent = (rew > 0 ? rpm(rew) + ' · ' : '') + 'default ' + motorCfg.def_rew + ', max ' + motorCfg.max_rew
-    + (rew > motorCfg.def_rew ? ' · ⚠ overshoots the home switch further than it was tuned for' : '');
-  rh.style.color = rew > motorCfg.def_rew ? '#c0392b' : '';
-
-  document.getElementById('motor-cfg-acc-hint').textContent =
-    (acc > 0 && fwd > 0 ? (fwd / acc).toFixed(1) + ' s to reach forward speed · ' : '')
-    + 'default ' + motorCfg.def_acc;
-}
-
-function applyMotorCfg() {
-  if (!motorCfg) return;
-  const clamp = (id, lo, hi, dflt) => {
-    const el = document.getElementById(id);
-    const v = Math.min(hi, Math.max(lo, parseInt(el.value) || dflt));
-    el.value = v;
-    return v;
-  };
-  const fwd = clamp('motor-cfg-fwd', motorCfg.min_hz,  motorCfg.max_fwd, motorCfg.def_fwd);
-  const rew = clamp('motor-cfg-rew', motorCfg.min_hz,  motorCfg.max_rew, motorCfg.def_rew);
-  const acc = clamp('motor-cfg-acc', motorCfg.min_acc, motorCfg.max_acc, motorCfg.def_acc);
-  motorCfgHint();
-  motorCfgSent = { fwd, rew, acc, at: Date.now() };
-  publish('cmd/motor_cfg', fwd + ',' + rew + ',' + acc);
-  showToast('Motor \u2192 fwd ' + fwd + ' Hz, rewind ' + rew + ' Hz, accel ' + acc);
-}
-
-function resetMotorCfg() {
-  if (!motorCfg) return;
-  if (!confirm('Reset motor speed to the firmware defaults (fwd ' + motorCfg.def_fwd
-      + ' Hz, rewind ' + motorCfg.def_rew + ' Hz, accel ' + motorCfg.def_acc + ')?')) return;
-  motorCfgSent = null;
-  publish('cmd/motor_cfg', 'reset');
-  showToast('Motor speed \u2192 defaults');
-}
-
-// Applies the firmware's retained status/motor_cfg echo. Never overwrites the
-// input being typed into.
-function applyMotorCfg_status(d) {
-  motorCfg = d;
-  document.getElementById('motor-cfg-block').style.display = '';
-  document.getElementById('motor-cfg-divider').style.display = '';
-  document.getElementById('motor-cfg-custom').style.display = d.custom ? '' : 'none';
-  const focused = document.activeElement;
-  const setNum = (id, val, lo, hi) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.min = lo; el.max = hi;
-    if (val !== undefined && el !== focused) el.value = val;
-  };
-  setNum('motor-cfg-fwd', d.fwd, d.min_hz,  d.max_fwd);
-  setNum('motor-cfg-rew', d.rew, d.min_hz,  d.max_rew);
-  setNum('motor-cfg-acc', d.acc, d.min_acc, d.max_acc);
-  motorCfgHint();
-  if (motorCfgSent && Date.now() - motorCfgSent.at < 10000) {
-    if (d.fwd !== motorCfgSent.fwd || d.rew !== motorCfgSent.rew || d.acc !== motorCfgSent.acc) {
-      showToast('Stove refused the motor speed \u2014 still ' + d.fwd + '/' + d.rew + ' Hz, accel ' + d.acc);
-    }
-    motorCfgSent = null;
-  }
 }
 
 function techMotor(dir) {
