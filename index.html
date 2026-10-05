@@ -697,6 +697,18 @@
         <div class="tech-field-lbl" style="margin-top:10px">Acceleration (steps/s²)</div>
         <input id="motor-cfg-acc" class="tech-input" type="number" min="100" max="5000" step="50" oninput="motorCfgHint()">
         <div id="motor-cfg-acc-hint" class="tech-field-lbl" style="margin-top:4px"></div>
+        <!-- Soft start: only on firmware whose echo carries "soft" -->
+        <div id="motor-cfg-soft-wrap" style="display:none">
+          <div class="tech-field-lbl" style="margin-top:10px">Soft start (steps, 0 = off)</div>
+          <input id="motor-cfg-soft" class="tech-input" type="number" min="0" max="2000" step="50" oninput="motorCfgHint()">
+          <div class="row-btns" style="margin-top:6px">
+            <button class="btn btn-gray btn-sm" style="flex:1" onclick="motorCfgSoftPreset(0)">Off</button>
+            <button class="btn btn-gray btn-sm" style="flex:1" onclick="motorCfgSoftPreset(200)">200</button>
+            <button class="btn btn-gray btn-sm" style="flex:1" onclick="motorCfgSoftPreset(500)">500</button>
+            <button class="btn btn-gray btn-sm" style="flex:1" onclick="motorCfgSoftPreset(1000)">1000</button>
+          </div>
+          <div id="motor-cfg-soft-hint" class="tech-field-lbl" style="margin-top:4px"></div>
+        </div>
         <div class="row-btns" style="margin-top:10px">
           <button class="btn btn-brown btn-sm" style="flex:2" onclick="applyMotorCfg()">Apply motor speed</button>
           <button class="btn btn-gray btn-sm"  style="flex:1" onclick="resetMotorCfg()">Defaults</button>
@@ -1629,7 +1641,7 @@ function applyAirBreak_status(d) {
 // ============================================================
 // MOTOR SPEED — runtime drive-motor tuning (load testing)
 // ============================================================
-// One command carries all three values ("fwd,rew,acc") so the stove never runs
+// One command carries all the values ("fwd,rew,acc[,soft]") so the stove never runs
 // a half-applied combination. No lockField(): the stove echoes the values it is
 // REALLY running right after every command — including a refused one — and that
 // echo is what the inputs must show.
@@ -1638,6 +1650,11 @@ let motorCfgSent = null;    // {fwd,rew,acc,at} of the last Apply, to spot a ref
 
 function motorCfgPreset(hz) {
   document.getElementById('motor-cfg-fwd').value = hz;
+  motorCfgHint();
+}
+
+function motorCfgSoftPreset(steps) {
+  document.getElementById('motor-cfg-soft').value = steps;
   motorCfgHint();
 }
 
@@ -1663,6 +1680,17 @@ function motorCfgHint() {
   document.getElementById('motor-cfg-acc-hint').textContent =
     (acc > 0 && fwd > 0 ? (fwd / acc).toFixed(1) + ' s to reach forward speed · ' : '')
     + 'default ' + motorCfg.def_acc;
+
+  if (motorCfg.soft !== undefined) {
+    // Handover speed from FastAccelStepper: v_h = sqrt(1.5 × accel × steps)
+    const soft = val('motor-cfg-soft');
+    const vh = soft > 0 && acc > 0 ? Math.round(Math.sqrt(1.5 * acc * soft)) : 0;
+    document.getElementById('motor-cfg-soft-hint').textContent = (soft > 0
+      ? 'Eases the push in over the first ' + soft + ' steps and out over the last ' + soft
+        + (fwd > 0 && vh >= fwd ? ' · the whole ramp is eased' : ' · full accel from ~' + vh + ' Hz')
+      : 'Off: full acceleration from the first step')
+      + ' · default ' + motorCfg.def_soft + ', max ' + motorCfg.max_soft;
+  }
 }
 
 function applyMotorCfg() {
@@ -1676,16 +1704,20 @@ function applyMotorCfg() {
   const fwd = clamp('motor-cfg-fwd', motorCfg.min_hz,  motorCfg.max_fwd, motorCfg.def_fwd);
   const rew = clamp('motor-cfg-rew', motorCfg.min_hz,  motorCfg.max_rew, motorCfg.def_rew);
   const acc = clamp('motor-cfg-acc', motorCfg.min_acc, motorCfg.max_acc, motorCfg.def_acc);
+  const hasSoft = motorCfg.soft !== undefined;
+  const soft = hasSoft ? clamp('motor-cfg-soft', 0, motorCfg.max_soft, motorCfg.def_soft) : undefined;
   motorCfgHint();
-  motorCfgSent = { fwd, rew, acc, at: Date.now() };
-  publish('cmd/motor_cfg', fwd + ',' + rew + ',' + acc);
-  showToast('Motor \u2192 fwd ' + fwd + ' Hz, rewind ' + rew + ' Hz, accel ' + acc);
+  motorCfgSent = { fwd, rew, acc, soft, at: Date.now() };
+  publish('cmd/motor_cfg', fwd + ',' + rew + ',' + acc + (hasSoft ? ',' + soft : ''));
+  showToast('Motor \u2192 fwd ' + fwd + ' Hz, rewind ' + rew + ' Hz, accel ' + acc
+    + (hasSoft ? ', soft start ' + soft : ''));
 }
 
 function resetMotorCfg() {
   if (!motorCfg) return;
   if (!confirm('Reset motor speed to the firmware defaults (fwd ' + motorCfg.def_fwd
-      + ' Hz, rewind ' + motorCfg.def_rew + ' Hz, accel ' + motorCfg.def_acc + ')?')) return;
+      + ' Hz, rewind ' + motorCfg.def_rew + ' Hz, accel ' + motorCfg.def_acc
+      + (motorCfg.soft !== undefined ? ', soft start ' + motorCfg.def_soft : '') + ')?')) return;
   motorCfgSent = null;
   publish('cmd/motor_cfg', 'reset');
   showToast('Motor speed \u2192 defaults');
@@ -1708,9 +1740,12 @@ function applyMotorCfg_status(d) {
   setNum('motor-cfg-fwd', d.fwd, d.min_hz,  d.max_fwd);
   setNum('motor-cfg-rew', d.rew, d.min_hz,  d.max_rew);
   setNum('motor-cfg-acc', d.acc, d.min_acc, d.max_acc);
+  document.getElementById('motor-cfg-soft-wrap').style.display = d.soft !== undefined ? '' : 'none';
+  if (d.soft !== undefined) setNum('motor-cfg-soft', d.soft, 0, d.max_soft);
   motorCfgHint();
   if (motorCfgSent && Date.now() - motorCfgSent.at < 10000) {
-    if (d.fwd !== motorCfgSent.fwd || d.rew !== motorCfgSent.rew || d.acc !== motorCfgSent.acc) {
+    if (d.fwd !== motorCfgSent.fwd || d.rew !== motorCfgSent.rew || d.acc !== motorCfgSent.acc
+        || (motorCfgSent.soft !== undefined && d.soft !== motorCfgSent.soft)) {
       showToast('Stove refused the motor speed \u2014 still ' + d.fwd + '/' + d.rew + ' Hz, accel ' + d.acc);
     }
     motorCfgSent = null;
