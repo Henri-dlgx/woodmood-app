@@ -677,6 +677,14 @@
            firmware that cannot act on it. Defaults and bounds come from the echo. -->
       <div id="motor-cfg-block" style="display:none">
         <div class="tech-sec">Motor Speed<span id="motor-cfg-custom" class="side-badge" style="display:none">tuned</span></div>
+        <!-- Custom speed toggle: off = firmware defaults, fields hidden. Turning it
+             off sends cmd/motor_cfg "reset"; on just reveals the fields. -->
+        <div class="toggle-wrap">
+          <span class="toggle-label">Custom speed</span>
+          <label class="tgl"><input type="checkbox" id="tog-motor-custom" onchange="setMotorCustom(this.checked)"><span class="tgl-sl"></span></label>
+        </div>
+        <div id="motor-cfg-default-lbl" class="tech-field-lbl" style="margin-top:6px">Default speed.</div>
+        <div id="motor-cfg-fields" style="display:none;margin-top:10px">
         <div class="tech-field-lbl" style="margin-bottom:8px">
           Stepper rate in full steps per second, before the gearbox. Faster costs
           torque: if the carriage stalls or a log lands in the wrong place under
@@ -718,6 +726,7 @@
         <div class="row-btns" style="margin-top:10px">
           <button class="btn btn-brown btn-sm" style="flex:2" onclick="applyMotorCfg()">Apply motor speed</button>
           <button class="btn btn-gray btn-sm"  style="flex:1" onclick="resetMotorCfg()">Defaults</button>
+        </div>
         </div>
       </div>
 
@@ -1711,6 +1720,26 @@ function motorCfgHint() {
   }
 }
 
+let motorCustomOpen = false; // toggle switched on locally, before any Apply
+
+function setMotorCustom(on) {
+  motorCustomOpen = on;
+  if (!on && motorCfg && motorCfg.custom) {
+    motorCfgSent = null;
+    motorCfg.custom = false;   // don't bounce the toggle back on before the echo lands
+    publish('cmd/motor_cfg', 'reset');
+    showToast('Motor speed \u2192 default');
+  }
+  showMotorCustom();
+}
+
+function showMotorCustom() {
+  const on = motorCustomOpen || !!(motorCfg && motorCfg.custom);
+  document.getElementById('tog-motor-custom').checked = on;
+  document.getElementById('motor-cfg-fields').style.display = on ? '' : 'none';
+  document.getElementById('motor-cfg-default-lbl').style.display = on ? 'none' : '';
+}
+
 function applyMotorCfg() {
   if (!motorCfg) return;
   const clamp = (id, lo, hi, dflt) => {
@@ -1757,6 +1786,7 @@ function applyMotorCfg_status(d) {
   document.getElementById('motor-cfg-block').style.display = '';
   document.getElementById('motor-cfg-divider').style.display = '';
   document.getElementById('motor-cfg-custom').style.display = d.custom ? '' : 'none';
+  showMotorCustom();
   const focused = document.activeElement;
   const setNum = (id, val, lo, hi) => {
     const el = document.getElementById(id);
