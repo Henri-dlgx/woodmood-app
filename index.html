@@ -732,6 +732,44 @@
 
       <hr class="divider" id="motor-cfg-divider" style="display:none">
 
+      <!-- PISTON PULL TRIM ─────────────────────────────────────────────────────
+           Per-side extra time on the main insertion pull (retract), firmware
+           cmd/piston_trim → retained status/piston_trim. Hidden until the stove
+           publishes the echo, so it never shows on firmware that cannot act on it.
+           Defaults, bounds and the base pull time all come from the echo. -->
+      <div id="piston-trim-block" style="display:none">
+        <div class="tech-sec">Piston Pull Trim<span id="piston-trim-custom" class="side-badge" style="display:none">tuned</span></div>
+        <div class="tech-field-lbl" style="margin-bottom:8px">
+          The pull is timed, not measured: each side runs for the base time plus
+          its trim. If a piston stops short, add time; if it pulls too far, take
+          some off. Applies from the next insertion and is saved on the stove.
+        </div>
+        <div class="tech-field-lbl">Left trim (ms)</div>
+        <input id="piston-trim-l" class="tech-input" type="number" min="-5000" max="5000" step="250" oninput="pistonTrimHint()">
+        <div class="row-btns" style="margin-top:6px">
+          <button class="btn btn-gray btn-sm" style="flex:1" onclick="pistonTrimNudge('l',-500)">−0.5 s</button>
+          <button class="btn btn-gray btn-sm" style="flex:1" onclick="pistonTrimNudge('l',-250)">−0.25 s</button>
+          <button class="btn btn-gray btn-sm" style="flex:1" onclick="pistonTrimNudge('l',250)">+0.25 s</button>
+          <button class="btn btn-gray btn-sm" style="flex:1" onclick="pistonTrimNudge('l',500)">+0.5 s</button>
+        </div>
+        <div id="piston-trim-l-hint" class="tech-field-lbl" style="margin-top:4px"></div>
+        <div class="tech-field-lbl" style="margin-top:10px">Right trim (ms)</div>
+        <input id="piston-trim-r" class="tech-input" type="number" min="-5000" max="5000" step="250" oninput="pistonTrimHint()">
+        <div class="row-btns" style="margin-top:6px">
+          <button class="btn btn-gray btn-sm" style="flex:1" onclick="pistonTrimNudge('r',-500)">−0.5 s</button>
+          <button class="btn btn-gray btn-sm" style="flex:1" onclick="pistonTrimNudge('r',-250)">−0.25 s</button>
+          <button class="btn btn-gray btn-sm" style="flex:1" onclick="pistonTrimNudge('r',250)">+0.25 s</button>
+          <button class="btn btn-gray btn-sm" style="flex:1" onclick="pistonTrimNudge('r',500)">+0.5 s</button>
+        </div>
+        <div id="piston-trim-r-hint" class="tech-field-lbl" style="margin-top:4px"></div>
+        <div class="row-btns" style="margin-top:10px">
+          <button class="btn btn-brown btn-sm" style="flex:2" onclick="applyPistonTrim()">Apply pull trim</button>
+          <button class="btn btn-gray btn-sm"  style="flex:1" onclick="resetPistonTrim()">Defaults</button>
+        </div>
+      </div>
+
+      <hr class="divider" id="piston-trim-divider" style="display:none">
+
       <!-- MANUAL MOTOR CONTROL -->
       <div>
         <div class="tech-sec">Manual Motor Control<span id="motor-side-lbl" class="side-badge">◀ L</span></div>
@@ -1022,6 +1060,7 @@ function onMessage(topic, payloadBuf) {
   // TEMPORARY TUNING BLOCK — retained echo of the main-fan air-break settings.
   if (sub === 'status/airbreak')   { try { applyAirBreak_status(JSON.parse(payload)); } catch(e){} return; }
   if (sub === 'status/motor_cfg')  { try { applyMotorCfg_status(JSON.parse(payload)); } catch(e){} return; }
+  if (sub === 'status/piston_trim') { try { applyPistonTrim_status(JSON.parse(payload)); } catch(e){} return; }
   if (sub === 'status/fault_side') { const _s = payload.toLowerCase(); faultSide = (_s === 'right' || _s === 'r') ? 'r' : 'l'; if (faultActive) renderFaultPhase(); return; }
 
   // status/temperature, status/room_temp, status/fault, status/system_state and
@@ -1777,6 +1816,73 @@ function resetMotorCfg() {
   motorCfgSent = null;
   publish('cmd/motor_cfg', 'reset');
   showToast('Motor speed \u2192 defaults');
+}
+
+// ============================================================
+// PISTON PULL TRIM (cmd/piston_trim ↔ retained status/piston_trim)
+// ============================================================
+// Same contract as the motor speed block: no lockField(), the stove echoes the
+// values it is really running after every command (a refused one included).
+let pistonTrim = null;      // last status/piston_trim echo
+
+function pistonTrimHint() {
+  if (!pistonTrim) return;
+  ['l', 'r'].forEach(side => {
+    const v = parseInt(document.getElementById('piston-trim-' + side).value);
+    const def = side === 'l' ? pistonTrim.def_l : pistonTrim.def_r;
+    const total = pistonTrim.base + (isNaN(v) ? 0 : v);
+    const out = isNaN(v) || v < pistonTrim.min || v > pistonTrim.max;
+    const el = document.getElementById('piston-trim-' + side + '-hint');
+    el.textContent = (out ? '⚠ allowed ' + pistonTrim.min + ' to +' + pistonTrim.max + ' ms · '
+                          : 'Pull = ' + (total / 1000).toFixed(2) + ' s · ')
+      + 'base ' + (pistonTrim.base / 1000).toFixed(2) + ' s, default trim ' + (def >= 0 ? '+' : '') + def + ' ms';
+    el.style.color = out ? '#c0392b' : '';
+  });
+}
+
+function pistonTrimNudge(side, ms) {
+  const el = document.getElementById('piston-trim-' + side);
+  const lo = pistonTrim ? pistonTrim.min : -5000, hi = pistonTrim ? pistonTrim.max : 5000;
+  el.value = Math.min(hi, Math.max(lo, (parseInt(el.value) || 0) + ms));
+  pistonTrimHint();
+}
+
+function applyPistonTrim() {
+  if (!pistonTrim) return;
+  const clamp = id => {
+    const el = document.getElementById(id);
+    const v = Math.min(pistonTrim.max, Math.max(pistonTrim.min, parseInt(el.value) || 0));
+    el.value = v;
+    return v;
+  };
+  const l = clamp('piston-trim-l'), r = clamp('piston-trim-r');
+  pistonTrimHint();
+  publish('cmd/piston_trim', l + ',' + r);
+  showToast('Pull trim \u2192 left ' + (l >= 0 ? '+' : '') + l + ' ms, right ' + (r >= 0 ? '+' : '') + r + ' ms');
+}
+
+function resetPistonTrim() {
+  if (!pistonTrim) return;
+  if (!confirm('Reset the pull trim to the firmware defaults (left ' + pistonTrim.def_l
+      + ' ms, right ' + pistonTrim.def_r + ' ms)?')) return;
+  publish('cmd/piston_trim', 'reset');
+  showToast('Pull trim \u2192 defaults');
+}
+
+// Applies the retained status/piston_trim echo. Never overwrites the input being
+// typed into.
+function applyPistonTrim_status(d) {
+  pistonTrim = d;
+  document.getElementById('piston-trim-block').style.display = '';
+  document.getElementById('piston-trim-divider').style.display = '';
+  document.getElementById('piston-trim-custom').style.display = d.custom ? '' : 'none';
+  const focused = document.activeElement;
+  [['piston-trim-l', d.l], ['piston-trim-r', d.r]].forEach(([id, v]) => {
+    const el = document.getElementById(id);
+    el.min = d.min; el.max = d.max;
+    if (el !== focused) el.value = v;
+  });
+  pistonTrimHint();
 }
 
 // Applies the firmware's retained status/motor_cfg echo. Never overwrites the
