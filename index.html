@@ -34,6 +34,17 @@
     /* ── Connection panel ── */
     .conn-input{padding:9px 12px;border:1px solid #d0b08a;border-radius:8px;font-size:.9rem;width:100%}
     .conn-input:focus{outline:none;border-color:#8B4513}
+    select.conn-input{background:#fff;color:inherit;cursor:pointer}
+    .conn-warn{padding:9px 12px;border:1px solid #e0a040;border-radius:8px;background:#fff4e0;
+      color:#8a4b00;font-size:.82rem;line-height:1.35}
+    /* Old / New MQTT standard switch (connection panel) */
+    .std-row{display:flex;align-items:center;justify-content:center;gap:12px;padding:8px 10px;
+      background:#f5e8da;border-radius:10px}
+    .std-lbl{font-size:.8rem;font-weight:700;color:#c4a88a;letter-spacing:.04em;cursor:pointer;
+      user-select:none;transition:color .2s}
+    .std-lbl.active{color:#8B4513}
+    .std-row input:checked + .tgl-sl{background:#8B4513}
+    .std-hint{font-size:.72rem;color:#8a7360;text-align:center;line-height:1.35;white-space:pre-line}
 
     /* ── System state button ── */
     .sys-btn{width:100%;border:none;border-radius:12px;font-size:1rem;font-weight:700;
@@ -249,11 +260,18 @@
   <div class="card" id="conn-card">
     <div class="section-title">Broker Connection</div>
     <div style="display:flex;flex-direction:column;gap:8px">
+      <div class="conn-warn">⚠️ <b>Do not change the broker, port, username or password.</b> They are already set up. Only pick the stove below, then press Connect.</div>
+      <div class="std-row" title="MQTT standard used to log in to the stove">
+        <span class="std-lbl" id="std-lbl-old" onclick="setMqttStd(false)">OLD</span>
+        <label class="tgl"><input type="checkbox" id="cfg-std" onchange="setMqttStd(this.checked)"><span class="tgl-sl"></span></label>
+        <span class="std-lbl" id="std-lbl-new" onclick="setMqttStd(true)">NEW</span>
+      </div>
+      <div class="std-hint" id="std-hint"></div>
       <input class="conn-input" id="cfg-broker" placeholder="Broker  e.g. abc123.s1.eu.hivemq.cloud"/>
       <input class="conn-input" id="cfg-port"   placeholder="WSS port  e.g. 8084" type="number"/>
       <input class="conn-input" id="cfg-user"   placeholder="Username"/>
       <input class="conn-input" id="cfg-pass"   placeholder="Password" type="password"/>
-      <input class="conn-input" id="cfg-serial" placeholder="Device serial  e.g. JJQF9D"/>
+      <select class="conn-input" id="cfg-serial" onchange="updateStdHint()" title="Stove serial"></select>
       <button class="btn btn-brown btn-full" onclick="saveAndConnect()">Connect</button>
     </div>
   </div>
@@ -848,6 +866,17 @@
 // ============================================================
 const SWAP_SIDES = false;   // true = swap left/right relative to firmware, false = no swap
 
+// MQTT standard (OLD / NEW switch in the connection panel).
+//   OLD — broker, port, username and serial used exactly as typed (the original
+//         shared-login setup of this app).
+//   NEW — the per-stove login the French customer app uses: fixed WoodMood EMQX
+//         broker, serial upper-cased with spaces removed, username "<SERIAL>-app",
+//         password = that stove's app password.
+// Each standard keeps its own saved password so switching back and forth while
+// testing doesn't mean retyping it.
+const NEW_STD_BROKER = 'pb666061.ala.eu-central-1.emqxsl.com';
+const NEW_STD_PORT   = 8084;
+
 // ============================================================
 // STATE
 // ============================================================
@@ -908,22 +937,87 @@ window.addEventListener('load', () => {
   // wrong on a fresh page load (before the first MQTT status arrives).
   const savedRoom = parseInt(localStorage.getItem('woodmood_room_temp'));
   if (savedRoom >= 18 && savedRoom <= 23) roomTemp = savedRoom;
-  if (cfg.broker && cfg.user && cfg.pass && cfg.serial) {
+  if (hasCreds()) {
     fillForm();
     document.getElementById('conn-card').style.display = 'none';
     connect();
+  } else {
+    fillForm();   // first run: show the OLD/NEW switch in its saved/default state
   }
   renderBars('left',  0);
   renderBars('right', 0);
   document.getElementById('room-val').textContent = tempToLabel(roomTemp);
 });
 
+function isNewStd() { return cfg.mqttStd === 'new'; }
+
+function normalizeSerial(raw) {
+  return String(raw || '').replace(/\s+/g, '').toUpperCase();
+}
+
+// Saved settings complete enough to auto-connect on page load?
+function hasCreds() {
+  return isNewStd() ? !!(cfg.serial && cfg.passNew)
+                    : !!(cfg.broker && cfg.user && cfg.pass && cfg.serial);
+}
+
+// What connect() actually uses, resolved for the active standard.
+function connParams() {
+  if (isNewStd()) {
+    const serial = normalizeSerial(cfg.serial);
+    return { broker: NEW_STD_BROKER, port: NEW_STD_PORT,
+             user: serial + '-app', pass: cfg.passNew, serial: serial };
+  }
+  return { broker: cfg.broker, port: cfg.port || 8084,
+           user: cfg.user, pass: cfg.pass, serial: cfg.serial };
+}
+
+// Fleet serials (= the UNIT_* names in HenriLib Secrets.h), same list as the DebugApp.
+const STOVES = ['JJQF9D', 'VEWGAX', 'TEST001', 'TEST002', 'AFNMU3', '87FQ8F', 'MRUNDG', 'C5KA7T'];
+
+// Fill the stove dropdown; a saved serial that isn't in the fleet list is kept as an extra option.
+function fillSerialSelect(current) {
+  const sel = document.getElementById('cfg-serial');
+  const list = STOVES.slice();
+  if (current && !list.includes(current)) list.push(current);
+  sel.innerHTML = '<option value="">— Pick a stove —</option>'
+    + list.map(function(s) { return '<option value="' + s + '">' + s + '</option>'; }).join('');
+  sel.value = current || '';
+}
+
 function fillForm() {
   document.getElementById('cfg-broker').value = cfg.broker || '';
   document.getElementById('cfg-port').value   = cfg.port   || '8084';
   document.getElementById('cfg-user').value   = cfg.user   || '';
-  document.getElementById('cfg-pass').value   = cfg.pass   || '';
-  document.getElementById('cfg-serial').value = cfg.serial || '';
+  fillSerialSelect(cfg.serial || '');
+  setMqttStd(isNewStd());
+}
+
+// Flip the OLD/NEW switch in the form. Takes effect on the next Connect.
+function setMqttStd(isNew) {
+  document.getElementById('cfg-std').checked = isNew;
+  document.getElementById('std-lbl-old').classList.toggle('active', !isNew);
+  document.getElementById('std-lbl-new').classList.toggle('active',  isNew);
+  ['cfg-broker', 'cfg-port', 'cfg-user'].forEach(function(id) {
+    document.getElementById(id).style.display = isNew ? 'none' : '';
+  });
+  const pass = document.getElementById('cfg-pass');
+  pass.placeholder = isNew ? 'Stove app password' : 'Password';
+  pass.value       = (isNew ? cfg.passNew : cfg.pass) || '';
+  updateStdHint();
+}
+
+function updateStdHint() {
+  const isNew  = document.getElementById('cfg-std').checked;
+  const serial = normalizeSerial(document.getElementById('cfg-serial').value) || 'SERIAL';
+  const active = client && client.connected;
+  const pending = active && (isNew !== isNewStd()) ? ' — press Connect to switch' : '';
+  // Show exactly where commands go, so a wrong serial/prefix is visible at a glance.
+  const now = active ? '\nNow sending to ' + prefix + '/cmd/… ('
+                       + (isNewStd() ? 'new' : 'old') + ' standard)' : '';
+  document.getElementById('std-hint').textContent = (isNew
+    ? 'New: logs in as ' + serial + '-app on the WoodMood EMQX broker'
+    : 'Old: broker, username and serial used exactly as typed') + pending + now;
 }
 
 function toggleConnPanel() {
@@ -936,26 +1030,38 @@ function toggleConnPanel() {
 // CONNECTION
 // ============================================================
 function saveAndConnect() {
-  cfg.broker = document.getElementById('cfg-broker').value.trim();
-  cfg.port   = parseInt(document.getElementById('cfg-port').value.trim()) || 8084;
-  cfg.user   = document.getElementById('cfg-user').value.trim();
-  cfg.pass   = document.getElementById('cfg-pass').value.trim();
-  cfg.serial = document.getElementById('cfg-serial').value.trim();
-  if (!cfg.broker || !cfg.user || !cfg.serial) { alert('Fill in all fields'); return; }
+  const isNew = document.getElementById('cfg-std').checked;
+  const pass  = document.getElementById('cfg-pass').value.trim();
+  cfg.mqttStd = isNew ? 'new' : 'old';
+  if (isNew) {
+    // Broker/port/username fields are hidden and left as they were, so
+    // switching back to OLD restores the previous setup untouched.
+    cfg.serial  = normalizeSerial(document.getElementById('cfg-serial').value);
+    cfg.passNew = pass;
+    if (!cfg.serial || !cfg.passNew) { alert('Fill in the serial and the stove app password'); return; }
+  } else {
+    cfg.broker = document.getElementById('cfg-broker').value.trim();
+    cfg.port   = parseInt(document.getElementById('cfg-port').value.trim()) || 8084;
+    cfg.user   = document.getElementById('cfg-user').value.trim();
+    cfg.pass   = pass;
+    cfg.serial = document.getElementById('cfg-serial').value.trim();
+    if (!cfg.broker || !cfg.user || !cfg.serial) { alert('Fill in all fields'); return; }
+  }
   localStorage.setItem(LS, JSON.stringify(cfg));
   document.getElementById('conn-card').style.display = 'none';
   connect();
 }
 
 function connect() {
-  prefix = 'WoodMood' + cfg.serial;
+  const p = connParams();
+  prefix = 'WoodMood' + p.serial;
   setDotState('connecting');
 
   if (client) { try { client.end(true); } catch(e){} }
 
-  client = mqtt.connect(`wss://${cfg.broker}:${cfg.port || 8084}/mqtt`, {
-    username:        cfg.user,
-    password:        cfg.pass,
+  client = mqtt.connect(`wss://${p.broker}:${p.port}/mqtt`, {
+    username:        p.user,
+    password:        p.pass,
     clientId:        'woodmood-web-' + Math.random().toString(16).substr(2,8),
     keepalive:       60,
     reconnectPeriod: 5000,
